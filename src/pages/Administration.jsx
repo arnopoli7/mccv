@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { UserPlus, UserCheck, UserX, Key } from 'lucide-react'
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, signOut } from 'firebase/auth'
 import { collection, getDocs, setDoc, doc } from 'firebase/firestore'
 import { db, secondaryAuth, loginToEmail } from '../firebase'
 import { useToast } from '../contexts/ToastContext'
@@ -68,8 +68,10 @@ export default function Administration() {
       setShowModal(false)
       await loadUsers()
     } catch (err) {
-      console.error('Erreur sauvegarde:', err)
-      toast.error('Erreur lors de la sauvegarde.')
+      if (err?.message !== 'duplicate' && !err?.code?.startsWith('auth/')) {
+        console.error('Erreur sauvegarde:', err)
+        toast.error('Erreur lors de la sauvegarde.')
+      }
     } finally {
       setSaving(false)
     }
@@ -79,12 +81,23 @@ export default function Administration() {
     const email = loginToEmail(form.login)
     // Vérifier doublon login
     const exists = users.find(u => u.login.toLowerCase() === form.login.toLowerCase())
-    if (exists) { toast.error('Cet identifiant est déjà utilisé.'); return }
+    if (exists) { toast.error('Cet identifiant est déjà utilisé.'); throw new Error('duplicate') }
 
     // Créer dans Firebase Auth via l'instance secondaire
-    const credential = await createUserWithEmailAndPassword(secondaryAuth, email, form.password)
+    let credential
+    try {
+      credential = await createUserWithEmailAndPassword(secondaryAuth, email, form.password)
+    } catch (err) {
+      const msg = {
+        'auth/email-already-in-use': 'Cet identifiant est déjà utilisé.',
+        'auth/weak-password': 'Mot de passe trop faible (6 caractères minimum).',
+        'auth/invalid-email': 'Format d\'identifiant invalide.',
+      }[err.code] || `Erreur Firebase : ${err.message}`
+      toast.error(msg)
+      throw err
+    }
     const uid = credential.user.uid
-    await secondaryAuth.signOut()
+    await signOut(secondaryAuth)
 
     // Créer le profil Firestore
     await setDoc(doc(db, 'users', uid), {
@@ -122,7 +135,7 @@ export default function Administration() {
           editUser.password
         )
         await updatePassword(credential.user, form.password)
-        await secondaryAuth.signOut()
+        await signOut(secondaryAuth)
         updates.password = form.password
       } catch (err) {
         console.error('Erreur changement mdp:', err)
