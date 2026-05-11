@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { UserPlus, UserCheck, UserX, Key } from 'lucide-react'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, signOut } from 'firebase/auth'
-import { collection, getDocs, setDoc, doc } from 'firebase/firestore'
+import { collection, getDocs, getDoc, setDoc, doc } from 'firebase/firestore'
 import { db, secondaryAuth, loginToEmail } from '../firebase'
 import { useToast } from '../contexts/ToastContext'
 import { genId } from '../utils/id'
@@ -25,6 +25,20 @@ export default function Administration() {
     try {
       const snap = await getDocs(collection(db, 'users'))
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+      // Récupération automatique : compléter les champs manquants sur les profils incomplets
+      await Promise.all(list.map(async u => {
+        const missing = {}
+        if (u.actif === undefined) missing.actif = true
+        if (u.setupDone === undefined) missing.setupDone = false
+        if (u.email === undefined && u.login) missing.email = loginToEmail(u.login)
+        if (Object.keys(missing).length > 0) {
+          console.log(`[Administration] Profil incomplet pour ${u.login}, complétion :`, missing)
+          await setDoc(doc(db, 'users', u.id), missing, { merge: true })
+          Object.assign(u, missing)
+        }
+      }))
+
       setUsers(list.sort((a, b) => (a.dateCreation || '').localeCompare(b.dateCreation || '')))
     } catch (err) {
       console.error('Erreur chargement utilisateurs:', err)
@@ -81,6 +95,31 @@ export default function Administration() {
     }
   }
 
+  // Retourne l'UID si le compte Auth existe sans profil Firestore, null si le profil existe déjà.
+  async function recoverOrphanedAuthAccount(email, password) {
+    let credential
+    try {
+      credential = await signInWithEmailAndPassword(secondaryAuth, email, password)
+    } catch {
+      // Mauvais mot de passe ou autre — vrai doublon irrécupérable
+      toast.error('Cet identifiant existe déjà.')
+      return null
+    }
+    const uid = credential.user.uid
+    await signOut(secondaryAuth)
+
+    // Vérifier si le profil Firestore existe
+    const profileSnap = await getDoc(doc(db, 'users', uid))
+    if (profileSnap.exists()) {
+      toast.error('Cet identifiant existe déjà.')
+      return null
+    }
+
+    // Profil manquant → récupération
+    console.log('[Administration] Profil Firestore manquant pour UID', uid, '— création automatique')
+    return uid
+  }
+
   async function createUser() {
     const email = loginToEmail(form.login)
     // Vérifier doublon login
@@ -88,22 +127,30 @@ export default function Administration() {
     if (exists) { toast.error('Cet identifiant est déjà utilisé.'); throw new Error('duplicate') }
 
     // Créer dans Firebase Auth via l'instance secondaire
-    console.log('[Administration] Création compte :', { email, passwordLength: form.password.length, password: form.password })
-    let credential
+    console.log('[Administration] Création compte :', { email, passwordLength: form.password.length })
+    let uid
+    let recovered = false
     try {
-      credential = await createUserWithEmailAndPassword(secondaryAuth, email, form.password)
+      const credential = await createUserWithEmailAndPassword(secondaryAuth, email, form.password)
+      uid = credential.user.uid
+      await signOut(secondaryAuth)
     } catch (err) {
       console.error('[Administration] Erreur Firebase Auth :', err.code, err.message)
-      const msg = {
-        'auth/email-already-in-use': 'Cet identifiant existe déjà.',
-        'auth/weak-password': 'Le mot de passe doit contenir au moins 6 caractères.',
-        'auth/invalid-email': 'Identifiant invalide (caractères non autorisés).',
-      }[err.code] || `Erreur Firebase : ${err.message}`
-      toast.error(msg)
-      throw err
+
+      if (err.code === 'auth/email-already-in-use') {
+        // Compte Auth existant — vérifier si le profil Firestore est manquant
+        uid = await recoverOrphanedAuthAccount(email, form.password)
+        if (!uid) throw err  // profil déjà complet, vrai doublon
+        recovered = true
+      } else {
+        const msg = {
+          'auth/weak-password': 'Le mot de passe doit contenir au moins 6 caractères.',
+          'auth/invalid-email': 'Identifiant invalide (caractères non autorisés).',
+        }[err.code] || `Erreur Firebase : ${err.message}`
+        toast.error(msg)
+        throw err
+      }
     }
-    const uid = credential.user.uid
-    await signOut(secondaryAuth)
 
     // Créer le profil Firestore
     await setDoc(doc(db, 'users', uid), {
@@ -122,7 +169,11 @@ export default function Administration() {
       etablissement: '', enseignant: '', zoneVacances: 'B', theme: 'clair',
     })
 
-    toast.success(`Compte "${form.login}" créé.`)
+    if (recovered) {
+      toast.success(`Ce compte existait déjà, profil "${form.login}" mis à jour.`)
+    } else {
+      toast.success(`Compte "${form.login}" créé.`)
+    }
   }
 
   async function editExistingUser() {
