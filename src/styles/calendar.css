@@ -1,0 +1,211 @@
+/* ── react-big-calendar overrides ──────────────────────────────────── */
+
+/* Base */
+.rbc-calendar {
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* ── Header row (day names) ── */
+.rbc-header {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 10px 6px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  border-bottom: 1px solid #e5e7eb !important;
+  background: transparent;
+}
+.rbc-header a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ── Today column ── */
+.rbc-today {
+  background-color: rgba(219, 234, 254, 0.45) !important;
+}
+.rbc-time-header-content .rbc-today {
+  background-color: rgba(219, 234, 254, 0.45) !important;
+}
+.rbc-row-bg .rbc-today {
+  background-color: rgba(219, 234, 254, 0.45) !important;
+}
+
+/* ── Time gutter (hours on the left) ── */
+.rbc-time-gutter {
+  min-width: 54px;
+}
+.rbc-time-gutter .rbc-label {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 500;
+  padding: 0 8px 0 4px;
+  white-space: nowrap;
+}
+
+/* ── Time slots ── */
+.rbc-time-slot {
+  border-top: none;
+  min-height: 28px;
+}
+.rbc-timeslot-group {
+  border-bottom: 1px solid #f3f4f6;
+  min-height: 56px;
+}
+.rbc-day-slot .rbc-time-slot {
+  border-top: 1px solid #f3f4f6;
+}
+
+/* ── Time view ── */
+.rbc-time-view {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.rbc-time-content {
+  border-top: 1px solid #e5e7eb;
+}
+.rbc-time-header-content {
+  border-left: 1px solid #e5e7eb;
+}
+
+/* ── Month view ── */
+.rbc-month-view {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.rbc-month-row {
+  border-top: 1px solid #f3f4f6;
+}
+.rbc-day-bg + .rbc-day-bg {
+  border-left: 1px solid #f3f4f6;
+}
+.rbc-off-range-bg {
+  background: #f9fafb;
+}
+.rbc-date-cell {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  color: #6b7280;
+}
+.rbc-now .rbc-button-link {
+  color: #3b82f6;
+  font-weight: 700;
+  background: rgba(219, 234, 254, 0.7);
+  border-radius: 50%;
+  padding: 1px 5px;
+}
+
+/* ── Events ── */
+.rbc-event {
+  border-radius: 8px !important;
+  padding: 3px 7px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+  border: none !important;
+}
+.rbc-event.rbc-selected {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5) !important;
+}
+.rbc-event:focus {
+  outline: none !important;
+}
+.rbc-show-more {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+.rbc-show-more:hover {
+  color: #3b82f6;
+  background: transparent;
+}
+
+/* ── Allday row ── */
+.rbc-allday-cell {
+  min-height: 24px;
+}
+
+/* ── Current time indicator ── */
+.rbc-current-time-indicator {
+  background-color: #3b82f6;
+  height: 2px;
+}
+.rbc-current-time-indicator::before {
+  content: '';
+  display: block;
+  width: 8px;
+  height: 8px;
+  background: #3b82f6;
+  border-radius: 50%;
+  position: absolute;
+  left: -4px;
+  top: -3px;
+}
+
+/* ════════════════════════════════════════════
+   DARK MODE
+   ════════════════════════════════════════════ */
+
+.dark .rbc-header {
+  color: #9ca3af;
+  border-bottom-color: #374151 !important;
+}
+.dark .rbc-today {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+.dark .rbc-time-header-content .rbc-today {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+.dark .rbc-row-bg .rbc-today {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+.dark .rbc-time-gutter .rbc-label {
+  color: #6b7280;
+}
+.dark .rbc-timeslot-group {
+  border-bottom-color: #1f2937;
+}
+.dark .rbc-day-slot .rbc-time-slot {
+  border-top-color: #1f2937;
+}
+.dark .rbc-time-view {
+  border-color: #374151;
+}
+.dark .rbc-time-content {
+  border-top-color: #374151;
+}
+.dark .rbc-time-header-content {
+  border-left-color: #374151;
+}
+.dark .rbc-month-view {
+  border-color: #374151;
+}
+.dark .rbc-month-row {
+  border-top-color: #1f2937;
+}
+.dark .rbc-day-bg + .rbc-day-bg {
+  border-left-color: #1f2937;
+}
+.dark .rbc-off-range-bg {
+  background: #111827;
+}
+.dark .rbc-date-cell {
+  color: #6b7280;
+}
+.dark .rbc-now .rbc-button-link {
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.15);
+}
+.dark .rbc-show-more {
+  color: #9ca3af;
+}
+.dark .rbc-current-time-indicator {
+  background-color: #60a5fa;
+}
+.dark .rbc-current-time-indicator::before {
+  background: #60a5fa;
+}
