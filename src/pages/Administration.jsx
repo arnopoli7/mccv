@@ -58,6 +58,10 @@ export default function Administration() {
       toast.error('Identifiant et mot de passe requis.')
       return
     }
+    if (!editUser && form.password.length < 6) {
+      toast.error('Le mot de passe doit contenir au moins 6 caractères.')
+      return
+    }
     setSaving(true)
     try {
       if (!editUser) {
@@ -84,14 +88,16 @@ export default function Administration() {
     if (exists) { toast.error('Cet identifiant est déjà utilisé.'); throw new Error('duplicate') }
 
     // Créer dans Firebase Auth via l'instance secondaire
+    console.log('[Administration] Création compte :', { email, passwordLength: form.password.length, password: form.password })
     let credential
     try {
       credential = await createUserWithEmailAndPassword(secondaryAuth, email, form.password)
     } catch (err) {
+      console.error('[Administration] Erreur Firebase Auth :', err.code, err.message)
       const msg = {
-        'auth/email-already-in-use': 'Cet identifiant est déjà utilisé.',
-        'auth/weak-password': 'Mot de passe trop faible (6 caractères minimum).',
-        'auth/invalid-email': 'Format d\'identifiant invalide.',
+        'auth/email-already-in-use': 'Cet identifiant existe déjà.',
+        'auth/weak-password': 'Le mot de passe doit contenir au moins 6 caractères.',
+        'auth/invalid-email': 'Identifiant invalide (caractères non autorisés).',
       }[err.code] || `Erreur Firebase : ${err.message}`
       toast.error(msg)
       throw err
@@ -262,6 +268,7 @@ export default function Administration() {
               type="password"
               className="input"
               placeholder={editUser ? '••••••••' : 'Mot de passe'}
+              autoComplete="new-password"
               value={form.password}
               onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
             />
