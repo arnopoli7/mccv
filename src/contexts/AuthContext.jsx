@@ -129,11 +129,17 @@ export function AuthProvider({ children }) {
 
   async function login(loginName, password) {
     const email = loginToEmail(loginName)
+    console.log('Login tenté — identifiant:', loginName, '| email:', email)
     try {
       const credential = await signInWithEmailAndPassword(auth, email, password)
+      console.log('Auth Firebase OK — uid:', credential.user.uid)
       const profile = await loadUserProfile(credential.user.uid)
+      console.log('Profil Firestore:', profile)
 
-      if (!profile) return { ok: false, error: 'Compte introuvable.' }
+      if (!profile) {
+        console.error('Profil Firestore absent pour uid:', credential.user.uid)
+        return { ok: false, error: 'Compte introuvable (profil Firestore absent). Contactez l\'administrateur.' }
+      }
       if (profile.actif === false) {
         await signOut(auth)
         return { ok: false, error: 'Compte désactivé.' }
@@ -148,6 +154,7 @@ export function AuthProvider({ children }) {
       setSession({ userId: credential.user.uid, role: freshProfile.role })
       return { ok: true, user: freshProfile }
     } catch (err) {
+      console.error('Login error — code:', err.code, '| message:', err.message)
       const authErrors = [
         'auth/user-not-found',
         'auth/wrong-password',
@@ -155,10 +162,9 @@ export function AuthProvider({ children }) {
         'auth/invalid-email',
       ]
       if (authErrors.includes(err.code)) {
-        return { ok: false, error: 'Identifiant ou mot de passe incorrect.' }
+        return { ok: false, error: `Identifiant ou mot de passe incorrect. (${err.code})` }
       }
-      console.error('Login error:', err)
-      return { ok: false, error: 'Erreur de connexion.' }
+      return { ok: false, error: `Erreur de connexion. (${err.code})` }
     }
   }
 

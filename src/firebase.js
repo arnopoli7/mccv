@@ -23,6 +23,8 @@ export const secondaryApp = initializeApp(firebaseConfig, 'secondary')
 export const secondaryAuth = getAuth(secondaryApp)
 
 // Convention email : login.toLowerCase()@mccv.local
+// Accepte aussi un email complet (contenant @) pour les tests directs
 export function loginToEmail(login) {
+  if (login.includes('@')) return login.toLowerCase()
   return `${login.toLowerCase()}@mccv.local`
 }
