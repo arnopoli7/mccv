@@ -71,30 +71,56 @@ export function AuthProvider({ children }) {
     return () => { if (unsubscribe) unsubscribe() }
   }, [])
 
-  // Crée le compte admin si inexistant (premier lancement)
+  // Vérifie que le compte admin existe dans Firebase Auth ET dans Firestore.
+  // Stratégie :
+  //   1. Tenter une connexion → si OK, vérifier/recréer le profil Firestore si absent
+  //   2. Si la connexion échoue (compte inexistant) → créer compte + profil Firestore
   async function ensureAdminExists() {
+    const email = loginToEmail(ADMIN_LOGIN)
+    const adminProfile = {
+      login: ADMIN_LOGIN,
+      nom: 'Arnaud',
+      role: 'admin',
+      actif: true,
+      setupDone: false,
+      dateCreation: new Date().toISOString(),
+      password: ADMIN_PASSWORD,
+      email,
+    }
+
     try {
-      const credential = await createUserWithEmailAndPassword(
-        auth,
-        loginToEmail(ADMIN_LOGIN),
-        ADMIN_PASSWORD
-      )
-      const uid = credential.user.uid
-      await writeUserProfile(uid, {
-        login: ADMIN_LOGIN,
-        nom: 'Arnaud',
-        role: 'admin',
-        actif: true,
-        setupDone: false,
-        dateCreation: new Date().toISOString(),
-        password: ADMIN_PASSWORD,
-        email: loginToEmail(ADMIN_LOGIN),
-      })
+      // Étape 1 : connexion test pour vérifier Auth + récupérer l'uid
+      const credential = await signInWithEmailAndPassword(auth, email, ADMIN_PASSWORD)
+      // Auth OK → vérifier que le profil Firestore existe
+      const profile = await loadUserProfile(credential.user.uid)
+      if (!profile) {
+        // Profil manquant (cas fréquent après réinitialisation Firestore) → le recréer
+        await writeUserProfile(credential.user.uid, adminProfile)
+        console.log('Profil admin Firestore recréé.')
+      }
       await signOut(auth)
-    } catch (err) {
-      // auth/email-already-in-use = admin existe déjà, c'est normal
-      if (err.code !== 'auth/email-already-in-use') {
-        console.error('Erreur création admin:', err)
+    } catch (loginErr) {
+      // Étape 2 : compte Auth inexistant → créer compte + profil
+      const needsCreation = [
+        'auth/user-not-found',
+        'auth/invalid-credential',
+        'auth/wrong-password',
+      ].includes(loginErr.code)
+
+      if (needsCreation) {
+        try {
+          const credential = await createUserWithEmailAndPassword(auth, email, ADMIN_PASSWORD)
+          await writeUserProfile(credential.user.uid, adminProfile)
+          await signOut(auth)
+          console.log('Compte admin créé.')
+        } catch (createErr) {
+          // Race condition très rare : ignorer si déjà créé entre les deux appels
+          if (createErr.code !== 'auth/email-already-in-use') {
+            console.error('Erreur création compte admin:', createErr)
+          }
+        }
+      } else {
+        console.error('Erreur vérification compte admin:', loginErr)
       }
     }
   }
