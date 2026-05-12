@@ -11,13 +11,14 @@ import { getVacancesForZone } from '../utils/vacancesData'
 const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi']
 
 export default function EmploiDuTemps() {
-  const { emploiDuTemps, vacances, classes, getAnneeActive, add, update, remove, setParams, getParams } = useData()
+  const { emploiDuTemps, vacances, stages, classes, getAnneeActive, add, update, remove, setParams, getParams } = useData()
   const toast = useToast()
 
   const anneeActive = getAnneeActive()
   const anneeId = anneeActive?.id
   const periodes = emploiDuTemps(anneeId)
   const vacancesList = vacances(anneeId)
+  const stagesList = stages(anneeId)
   const classList = classes()
   const params = getParams()
 
@@ -40,6 +41,12 @@ export default function EmploiDuTemps() {
   const [editVac, setEditVac] = useState(null)
   const [vacForm, setVacForm] = useState({ nom: '', dateDebut: '', dateFin: '' })
   const [deleteVac, setDeleteVac] = useState(null)
+
+  // ── Stages
+  const [showStageModal, setShowStageModal] = useState(false)
+  const [editStage, setEditStage] = useState(null)
+  const [stageForm, setStageForm] = useState({ nom: '', dateDebut: '', dateFin: '', classeIds: [] })
+  const [deleteStage, setDeleteStage] = useState(null)
 
   if (!anneeActive) {
     return (
@@ -140,6 +147,37 @@ export default function EmploiDuTemps() {
     toast.success('Vacances enregistrées.')
   }
 
+  // ── STAGES
+  function openCreateStage() {
+    setEditStage(null)
+    setStageForm({ nom: '', dateDebut: '', dateFin: '', classeIds: [] })
+    setShowStageModal(true)
+  }
+  function openEditStage(s) {
+    setEditStage(s)
+    setStageForm({ nom: s.nom, dateDebut: s.dateDebut, dateFin: s.dateFin, classeIds: s.classeIds || [] })
+    setShowStageModal(true)
+  }
+  function saveStage() {
+    if (!stageForm.nom.trim() || !stageForm.dateDebut || !stageForm.dateFin) return
+    if (editStage) {
+      update('stages', editStage.id, stageForm)
+      toast.success('Période de stage mise à jour.')
+    } else {
+      add('stages', { id: genId('stg'), anneeScolaireId: anneeId, ...stageForm })
+      toast.success(`Période de stage "${stageForm.nom}" créée.`)
+    }
+    setShowStageModal(false)
+  }
+  function toggleStageClasse(classeId) {
+    setStageForm(f => ({
+      ...f,
+      classeIds: f.classeIds.includes(classeId)
+        ? f.classeIds.filter(id => id !== classeId)
+        : [...f.classeIds, classeId],
+    }))
+  }
+
   const getClasse = (id) => classList.find(c => c.id === id)
 
   return (
@@ -153,7 +191,7 @@ export default function EmploiDuTemps() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1 w-fit">
-        {[['periodes', 'Périodes & créneaux'], ['vacances', 'Vacances scolaires']].map(([key, label]) => (
+        {[['periodes', 'Périodes & créneaux'], ['vacances', 'Vacances scolaires'], ['stages', 'Périodes de stage']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -294,6 +332,73 @@ export default function EmploiDuTemps() {
         </div>
       )}
 
+      {/* ── STAGES ── */}
+      {tab === 'stages' && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button onClick={openCreateStage} className="btn-primary flex items-center gap-2">
+              <Plus size={15} /> Nouvelle période de stage
+            </button>
+          </div>
+
+          <div className="card p-4 text-sm text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl">
+            Les périodes de stage sont affichées en orange sur les calendriers. Lors du déploiement du ruban pédagogique, les créneaux tombant pendant un stage sont automatiquement sautés pour les classes concernées.
+          </div>
+
+          {stagesList.length === 0 && (
+            <div className="card p-10 text-center text-gray-400">
+              Aucune période de stage. Créez une période (ex: Stage S1).
+            </div>
+          )}
+
+          <div className="card overflow-hidden">
+            {stagesList.length > 0 && (
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-700/50">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Nom</th>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Début</th>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Fin</th>
+                    <th className="text-left px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">Classes</th>
+                    <th className="px-4 py-3"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {stagesList.map(s => (
+                    <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-100">
+                        <span className="inline-flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-orange-400 shrink-0" />
+                          {s.nom}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{formatDate(s.dateDebut)}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{formatDate(s.dateFin)}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                        {(s.classeIds || []).length === 0
+                          ? <span className="text-gray-400 italic">Toutes</span>
+                          : (s.classeIds || []).map(id => getClasse(id)?.nom || id).join(', ')
+                        }
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => openEditStage(s)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-400 hover:text-blue-500">
+                            <Edit2 size={14} />
+                          </button>
+                          <button onClick={() => setDeleteStage(s)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Modal période */}
       <Modal isOpen={showPeriodeModal} onClose={() => setShowPeriodeModal(false)}
         title={editPeriode ? 'Modifier la période' : 'Nouvelle période'} size="sm">
@@ -389,6 +494,56 @@ export default function EmploiDuTemps() {
         </div>
       </Modal>
 
+      {/* Modal stage */}
+      <Modal isOpen={showStageModal} onClose={() => setShowStageModal(false)}
+        title={editStage ? 'Modifier la période de stage' : 'Nouvelle période de stage'} size="sm">
+        <div className="space-y-4">
+          <div>
+            <label className="label">Nom</label>
+            <input className="input" placeholder="Stage S1, Stage entreprise..." value={stageForm.nom}
+              onChange={e => setStageForm(f => ({ ...f, nom: e.target.value }))} autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Début</label>
+              <input type="date" className="input" value={stageForm.dateDebut}
+                onChange={e => setStageForm(f => ({ ...f, dateDebut: e.target.value }))} />
+            </div>
+            <div>
+              <label className="label">Fin</label>
+              <input type="date" className="input" value={stageForm.dateFin}
+                onChange={e => setStageForm(f => ({ ...f, dateFin: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Classes concernées</label>
+            {classList.length === 0 ? (
+              <p className="text-sm text-gray-400">Aucune classe configurée.</p>
+            ) : (
+              <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                {classList.map(c => (
+                  <label key={c.id} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={stageForm.classeIds.includes(c.id)}
+                      onChange={() => toggleStageClasse(c.id)}
+                      className="rounded"
+                    />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.couleur || '#94a3b8' }} />
+                    <span className="text-gray-800 dark:text-gray-100">{c.nom}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-gray-400 mt-1">Si aucune classe sélectionnée, le stage s'applique à toutes.</p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button className="btn-secondary" onClick={() => setShowStageModal(false)}>Annuler</button>
+            <button className="btn-primary" onClick={saveStage}>Enregistrer</button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Confirms */}
       <ConfirmDialog isOpen={!!deletePeriode} onClose={() => setDeletePeriode(null)}
         onConfirm={() => { remove('emploiDuTemps', deletePeriode.id); toast.info('Période supprimée.') }}
@@ -397,6 +552,10 @@ export default function EmploiDuTemps() {
       <ConfirmDialog isOpen={!!deleteVac} onClose={() => setDeleteVac(null)}
         onConfirm={() => { remove('vacances', deleteVac.id); toast.info('Vacances supprimées.') }}
         title="Supprimer" message={`Supprimer "${deleteVac?.nom}" ?`}
+        confirmLabel="Supprimer" danger />
+      <ConfirmDialog isOpen={!!deleteStage} onClose={() => setDeleteStage(null)}
+        onConfirm={() => { remove('stages', deleteStage.id); toast.info('Période de stage supprimée.') }}
+        title="Supprimer la période de stage" message={`Supprimer "${deleteStage?.nom}" ?`}
         confirmLabel="Supprimer" danger />
     </div>
   )

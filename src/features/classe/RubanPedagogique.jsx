@@ -233,6 +233,11 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
 
     const periodes = get('emploiDuTemps').filter(p => p.anneeScolaireId === anneeId)
     const vacancesList = get('vacances').filter(v => v.anneeScolaireId === anneeId)
+    // Stages pour cette classe
+    const stagesList = get('stages').filter(
+      s => s.anneeScolaireId === anneeId &&
+        ((s.classeIds || []).length === 0 || (s.classeIds || []).includes(classe.id))
+    )
 
     if (periodes.length === 0) {
       toast.error("Aucune période configurée dans l'emploi du temps.")
@@ -266,6 +271,8 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
     const JOUR_MAP = { lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5, samedi: 6, dimanche: 0 }
     const occurrences = []
     const periodesTriees = [...periodes].sort((a, b) => a.dateDebut.localeCompare(b.dateDebut))
+    // Compteur de créneaux sautés par stage
+    const stageSkips = {}
 
     for (const periode of periodesTriees) {
       const creneaux = (periode.creneaux || []).filter(c => c.classeId === classe.id)
@@ -278,19 +285,30 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
         const dayOfWeek = current.getDay()
         const dayCreneaux = creneaux
           .filter(cr => JOUR_MAP[cr.jour] === dayOfWeek)
-          .sort((a, b) => a.heureDebut.localeCompare(b.heureDebut))
+          .sort((a, b) => (a.heureDebut || '00:00').localeCompare(b.heureDebut || '00:00'))
 
         for (const cr of dayCreneaux) {
-          if (!isInVacances(current, vacancesList)) {
-            const durationH = (parseTimeToMinutes(cr.heureFin) - parseTimeToMinutes(cr.heureDebut)) / 60
-            if (durationH > 0) {
-              occurrences.push({
-                date: toISODate(current),
-                heureDebut: cr.heureDebut,
-                heureFin: cr.heureFin,
-                durationH,
-              })
-            }
+          // Sauter si vacances
+          if (isInVacances(current, vacancesList)) continue
+
+          // Sauter si période de stage — et compter
+          const stageHit = stagesList.find(s => isInVacances(current, [s]))
+          if (stageHit) {
+            stageSkips[stageHit.nom] = (stageSkips[stageHit.nom] || 0) + 1
+            continue
+          }
+
+          // PROBLÈME 2 — s'assurer que les heures sont bien des chaînes valides
+          const heureDebut = (cr.heureDebut || '').trim() || '00:00'
+          const heureFin = (cr.heureFin || '').trim() || '00:00'
+          const durationH = (parseTimeToMinutes(heureFin) - parseTimeToMinutes(heureDebut)) / 60
+          if (durationH > 0) {
+            occurrences.push({
+              date: toISODate(current),
+              heureDebut,
+              heureFin,
+              durationH,
+            })
           }
         }
         current = addDays(current, 1)
@@ -298,18 +316,9 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
     }
 
     if (occurrences.length === 0) {
-      toast.error("Aucun créneau disponible (vérifiez les périodes et les vacances).")
+      toast.error("Aucun créneau disponible (vérifiez les périodes, les vacances et les stages).")
       return
     }
-
-    // Supprimer les séances déjà déployées
-    const seanceRubanIds = toutesSeances.map(s => s.id)
-    const allExisting = get('seancesCalendrier').filter(
-      sc => sc.classeId === classe.id && sc.anneeScolaireId === anneeId
-    )
-    allExisting
-      .filter(sc => seanceRubanIds.includes(sc.seanceRubanId))
-      .forEach(sc => remove('seancesCalendrier', sc.id))
 
     // Remplir les créneaux avec les séances en tenant compte des durées
     const newEvents = []
@@ -351,7 +360,13 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       }
     }
 
-    newEvents.forEach(ev => add('seancesCalendrier', ev))
+    // PROBLÈME 1 — remplacement atomique : supprimer TOUTES les séances de cette classe/année
+    // puis ajouter les nouvelles en une seule opération set()
+    const allCal = get('seancesCalendrier')
+    const keptCal = allCal.filter(
+      sc => !(sc.classeId === classe.id && sc.anneeScolaireId === anneeId)
+    )
+    set('seancesCalendrier', [...keptCal, ...newEvents])
 
     setShowDeployModal(false)
     setShowDeployConfirm(false)
@@ -367,6 +382,11 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
         toast.success(`${seancesDéployées} séances déployées du ${debut} au ${fin} ✓`)
       }
     }
+
+    // Afficher les messages de décalage par stage
+    Object.entries(stageSkips).forEach(([nom, count]) => {
+      toast.info(`${count} séance(s) décalée(s) suite au stage "${nom}"`)
+    })
   }
 
   // ── Duplication du ruban

@@ -37,7 +37,7 @@ const TYPE_COLORS = {
 }
 
 function SeanceEvent({ event, calView }) {
-  if (event.isVacances) {
+  if (event.isVacances || event.isStage) {
     return <span style={{ fontSize: 11 }}>{event.title}</span>
   }
   const tc = TYPE_COLORS[event.type] || { border: '#94a3b8', badge: '#f1f5f9', badgeText: '#64748b' }
@@ -138,7 +138,7 @@ function CalToolbar({ onNavigate, label, view, onView }) {
 }
 
 export default function Calendrier() {
-  const { classes, seancesCalendrier, rubanPedagogique, vacances, getAnneeActive, update, cleanOrphanCalendarEvents } = useData()
+  const { classes, seancesCalendrier, rubanPedagogique, vacances, stages, getAnneeActive, update, cleanOrphanCalendarEvents } = useData()
   const toast = useToast()
 
   const [calView, setCalView] = useState(Views.WEEK)
@@ -154,6 +154,7 @@ export default function Calendrier() {
   const allClasses = classes()
   const allRubans = rubanPedagogique()
   const vacancesList = vacances(anneeId)
+  const stagesList = stages(anneeId)
 
   // Resolve title/type from ruban
   function getSeanceInfo(s) {
@@ -211,7 +212,17 @@ export default function Calendrier() {
     allDay: true,
   }))
 
-  const allEvents = [...seanceEvents, ...vacanceEvents]
+  const stageEvents = stagesList.map(s => ({
+    id: s.id,
+    title: `Stage : ${s.nom}`,
+    start: parseISO(s.dateDebut),
+    end: parseISO(s.dateFin),
+    resource: s,
+    isStage: true,
+    allDay: true,
+  }))
+
+  const allEvents = [...seanceEvents, ...vacanceEvents, ...stageEvents]
 
   function eventStyleGetter(event) {
     if (event.isVacances) {
@@ -222,6 +233,18 @@ export default function Calendrier() {
           border: 'none',
           borderRadius: '8px',
           fontSize: '0.7rem',
+        }
+      }
+    }
+    if (event.isStage) {
+      return {
+        style: {
+          backgroundColor: '#fed7aa',
+          color: '#c2410c',
+          border: 'none',
+          borderRadius: '8px',
+          fontSize: '0.7rem',
+          fontWeight: 600,
         }
       }
     }
@@ -244,7 +267,7 @@ export default function Calendrier() {
   }
 
   function handleSelectEvent(event) {
-    if (event.isVacances) return
+    if (event.isVacances || event.isStage) return
     setSelectedEvent({ seance: event.resource, info: getSeanceInfo(event.resource) })
   }
 

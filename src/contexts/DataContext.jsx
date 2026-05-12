@@ -7,7 +7,7 @@ const DataContext = createContext(null)
 
 const COLLECTIONS = [
   'anneesScolaires', 'classes', 'vacances', 'emploiDuTemps',
-  'rubanPedagogique', 'seancesCalendrier', 'ccf',
+  'rubanPedagogique', 'seancesCalendrier', 'ccf', 'stages',
 ]
 
 const DEFAULT_DATA = {
@@ -19,6 +19,7 @@ const DEFAULT_DATA = {
   rubanPedagogique: [],
   seancesCalendrier: [],
   ccf: [],
+  stages: [],
 }
 
 // ─── Helpers Firestore ────────────────────────────────────────────────────────
@@ -201,6 +202,11 @@ export function DataProvider({ children }) {
     return all
   }
 
+  const stages = (anneeScolaireId) => {
+    const all = get('stages')
+    return anneeScolaireId ? all.filter(s => s.anneeScolaireId === anneeScolaireId) : all
+  }
+
   function cleanOrphanCalendarEvents(anneeId) {
     const allCal = get('seancesCalendrier')
     const allRuban = get('rubanPedagogique').filter(rb => !anneeId || rb.anneeScolaireId === anneeId)
@@ -222,7 +228,7 @@ export function DataProvider({ children }) {
     getParams, setParams,
     anneesScolaires, getAnneeActive,
     classes, vacances, emploiDuTemps,
-    rubanPedagogique, seancesCalendrier, ccf,
+    rubanPedagogique, seancesCalendrier, ccf, stages,
     cleanOrphanCalendarEvents,
   }
 

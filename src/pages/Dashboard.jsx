@@ -16,7 +16,7 @@ import { format } from 'date-fns'
 export default function Dashboard() {
   const navigate = useNavigate()
   const { getCurrentUser } = useAuth()
-  const { classes, seancesCalendrier, rubanPedagogique, vacances, getAnneeActive, cleanOrphanCalendarEvents } = useData()
+  const { classes, seancesCalendrier, rubanPedagogique, vacances, stages, getAnneeActive, cleanOrphanCalendarEvents } = useData()
   const user = getCurrentUser()
 
   const anneeActive = getAnneeActive()
@@ -30,6 +30,7 @@ export default function Dashboard() {
 
   const classList = classes()
   const vacancesList = vacances(anneeId)
+  const stagesList = stages(anneeId)
   const allSeances = seancesCalendrier({ anneeScolaireId: anneeId })
   const allRuban = rubanPedagogique({ anneeScolaireId: anneeId })
 
@@ -356,6 +357,7 @@ export default function Dashboard() {
               {weekDays.map((day, i) => {
                 const isToday = isSameDay(day, today)
                 const isVac = isInVacances(day, vacancesList)
+                const isStage = isInVacances(day, stagesList)
                 const daySeances = getSeancesForDay(day)
                 return (
                   <div key={i}
@@ -373,6 +375,10 @@ export default function Dashboard() {
                       <div className="absolute inset-0 bg-gray-50/90 dark:bg-gray-800/80 flex items-center justify-center z-10 pointer-events-none">
                         <span className="text-[10px] text-gray-400 -rotate-12 select-none">Vacances</span>
                       </div>
+                    )}
+
+                    {!isVac && isStage && (
+                      <div className="absolute inset-0 bg-orange-50/70 dark:bg-orange-900/20 pointer-events-none z-5" />
                     )}
 
                     {!isVac && daySeances.map(s => {
