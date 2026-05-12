@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import guyRoux from '../assets/guy-roux.png'
 import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Printer,
@@ -110,13 +111,23 @@ export default function Dashboard() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
             Bonjour, {user?.nom || user?.login} 👋
           </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
+          <p className="text-2xl font-bold mt-0.5" style={{ color: '#003F8A' }}>
+            {user?.slogan || 'Éleveur de Champions ! 🏆'}
+          </p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
             {anneeActive ? `Année ${anneeActive.label}` : 'Aucune année configurée'}
           </p>
         </div>
-        <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 no-print">
-          <Printer size={15} /> Imprimer la semaine
-        </button>
+        <div className="flex items-center gap-4">
+          <img
+            src={guyRoux}
+            alt="Guy Roux"
+            style={{ height: 150, borderRadius: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+          />
+          <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 no-print">
+            <Printer size={15} /> Imprimer la semaine
+          </button>
+        </div>
       </div>
 
       {/* ── VIGNETTES CLASSES ── */}

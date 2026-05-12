@@ -28,6 +28,7 @@ export default function Parametres() {
   const [profil, setProfil] = useState({
     enseignant: params.enseignant || '',
     etablissement: params.etablissement || '',
+    slogan: user?.slogan || '',
   })
   const [zoneVacances, setZoneVacances] = useState(params.zoneVacances || 'B')
   const [pwd, setPwd] = useState({ current: '', next: '', confirm: '' })
@@ -41,7 +42,7 @@ export default function Parametres() {
 
   function saveProfil() {
     setParams({ enseignant: profil.enseignant, etablissement: profil.etablissement })
-    if (user) updateCurrentUserProfile({ nom: profil.enseignant || user.nom })
+    if (user) updateCurrentUserProfile({ nom: profil.enseignant || user.nom, slogan: profil.slogan })
     toast.success('Profil enregistré.')
   }
 
@@ -104,6 +105,12 @@ export default function Parametres() {
           <label className="label">Établissement</label>
           <input className="input" value={profil.etablissement}
             onChange={e => setProfil(p => ({ ...p, etablissement: e.target.value }))} />
+        </div>
+        <div>
+          <label className="label">Slogan personnel</label>
+          <input className="input" placeholder="Éleveur de Champions ! 🏆" value={profil.slogan}
+            onChange={e => setProfil(p => ({ ...p, slogan: e.target.value }))} />
+          <p className="text-xs text-gray-400 mt-1">Affiché sur votre tableau de bord.</p>
         </div>
         <button onClick={saveProfil} className="btn-primary flex items-center gap-2">
           <Save size={15} /> Enregistrer
