@@ -174,11 +174,13 @@ export default function CCFTab({ classe, anneeId }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="label">Sujet (PDF)</label>
-                    <FileUpload value={c.sujet} onChange={f => updateDoc(c.id, 'sujet', f)} label="Déposer le sujet" />
+                    <FileUpload value={c.sujet} onChange={f => updateDoc(c.id, 'sujet', f)} label="Déposer le sujet"
+                      storagePath={`${classe.id}/ccf/${c.id}`} />
                   </div>
                   <div>
                     <label className="label">Grille d'évaluation (PDF)</label>
-                    <FileUpload value={c.grilleEvaluation} onChange={f => updateDoc(c.id, 'grilleEvaluation', f)} label="Déposer la grille" />
+                    <FileUpload value={c.grilleEvaluation} onChange={f => updateDoc(c.id, 'grilleEvaluation', f)} label="Déposer la grille"
+                      storagePath={`${classe.id}/ccf/${c.id}`} />
                   </div>
                 </div>
 

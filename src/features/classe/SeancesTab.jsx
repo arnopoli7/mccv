@@ -253,6 +253,7 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
                 files={selDocs}
                 onAdd={doc => addDoc(selItem, doc)}
                 onRemove={idx => removeDoc(selItem, idx)}
+                storagePath={`${classe.id}/seances/${selItem.calEntry?.id || selItem.rubanSeance?.id}`}
               />
             </div>
           </div>

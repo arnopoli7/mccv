@@ -58,6 +58,11 @@ function SeanceEvent({ event, calView }) {
       <p style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.3, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {event.title}
       </p>
+      {event.matiereNom && (
+        <p style={{ fontSize: 10, opacity: 0.8, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {event.matiereNom}
+        </p>
+      )}
       {event.classeNom && (
         <p style={{ fontSize: 10, opacity: 0.7, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {event.classeNom}
@@ -186,6 +191,9 @@ export default function Calendrier() {
   const seanceEvents = allSeances.map(s => {
     const info = getSeanceInfo(s)
     const classe = allClasses.find(c => c.id === s.classeId)
+    const matiereNom = s.matiereId
+      ? (classe?.matieres?.find(m => m.id === s.matiereId)?.nom || 'Non définie')
+      : null
     const start = combineDateAndTime(s.date, s.heureDebut || '08:00')
     const end = combineDateAndTime(s.date, s.heureFin || '09:00')
     return {
@@ -197,6 +205,7 @@ export default function Calendrier() {
       type: info.type,
       classeNom: classe?.nom || '',
       classeCouleur: classe?.couleur || '#94a3b8',
+      matiereNom,
       statut: getStatut(s),
       isVacances: false,
     }
@@ -306,6 +315,9 @@ export default function Calendrier() {
   const selInfo = selectedEvent?.info || null
   const selStatut = selSeance ? getStatut(selSeance) : null
   const selClasse = selSeance ? allClasses.find(c => c.id === selSeance.classeId) : null
+  const selMatiereNom = selSeance?.matiereId
+    ? (selClasse?.matieres?.find(m => m.id === selSeance.matiereId)?.nom || 'Non définie')
+    : null
 
   return (
     <div className="max-w-7xl mx-auto space-y-5">
@@ -368,7 +380,7 @@ export default function Calendrier() {
             toolbar: CalToolbar,
           }}
           popup
-          tooltipAccessor={event => event.isVacances ? event.title : `${event.title}${event.type ? ` — ${event.type}` : ''} (${event.classeNom})`}
+          tooltipAccessor={event => event.isVacances ? event.title : `${event.title}${event.matiereNom ? ` — ${event.matiereNom}` : ''}${event.type ? ` — ${event.type}` : ''} (${event.classeNom})`}
         />
       </div>
 
@@ -392,6 +404,12 @@ export default function Calendrier() {
                     />
                     <p className="font-medium text-gray-800 dark:text-gray-100">{selClasse.nom}</p>
                   </div>
+                </div>
+              )}
+              {selMatiereNom && (
+                <div>
+                  <p className="text-gray-400 mb-0.5">Matière</p>
+                  <p className="font-medium text-gray-800 dark:text-gray-100">{selMatiereNom}</p>
                 </div>
               )}
               {selInfo.type && (

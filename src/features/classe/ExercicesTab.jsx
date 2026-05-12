@@ -205,6 +205,7 @@ export default function ExercicesTab({ classe, anneeId, onGoToRuban }) {
               files={selDocs}
               onAdd={doc => addDoc(selItem, doc)}
               onRemove={idx => removeDoc(selItem, idx)}
+              storagePath={`${classe.id}/exercices/${selItem.calEntry?.id || selItem.rubanSeance?.id}`}
             />
             <div className="flex justify-end">
               <button className="btn-secondary" onClick={() => setSelectedItem(null)}>Fermer</button>

@@ -251,7 +251,10 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       return
     }
     const hasCreneaux = periodes.some(p =>
-      (p.creneaux || []).some(c => c.classeId === classe.id)
+      (p.creneaux || []).some(c =>
+        c.classeId === classe.id &&
+        (!currentMatiere?.id || c.matiereId === currentMatiere.id)
+      )
     )
     if (!hasCreneaux) {
       toast.error("Aucun créneau configuré pour cette classe dans l'emploi du temps.")
@@ -266,14 +269,6 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       return
     }
 
-    const missingDuree = toutesSeances.filter(s => !s.duree || parseFloat(s.duree) <= 0)
-    if (missingDuree.length > 0) {
-      toast.error(`${missingDuree.length} séance(s) sans durée. Veuillez renseigner la durée de chaque séance.`)
-      setShowDeployModal(false)
-      setShowDeployConfirm(false)
-      return
-    }
-
     // Construire la liste chronologique des créneaux avec leur durée en heures
     const JOUR_MAP = { lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5, samedi: 6, dimanche: 0 }
     const occurrences = []
@@ -282,7 +277,10 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
     const stageSkips = {}
 
     for (const periode of periodesTriees) {
-      const creneaux = (periode.creneaux || []).filter(c => c.classeId === classe.id)
+      const creneaux = (periode.creneaux || []).filter(c =>
+        c.classeId === classe.id &&
+        (!currentMatiere?.id || c.matiereId === currentMatiere.id)
+      )
       if (creneaux.length === 0) continue
 
       let current = parseISO(periode.dateDebut)
@@ -335,44 +333,27 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       return
     }
 
-    // Remplir les créneaux avec les séances en tenant compte des durées
+    // 1 créneau = 1 séance : chaque séance occupe le créneau entier (heureDebut→heureFin),
+    // quelle que soit la durée configurée. Pas de découpage ni de report sur le créneau suivant.
     const newEvents = []
-    let slotIdx = 0
-    let slotRemaining = occurrences[0]?.durationH || 0
-
-    for (const s of toutesSeances) {
-      let seanceRemaining = parseFloat(s.duree) || 1
-
-      while (seanceRemaining > 0.001 && slotIdx < occurrences.length) {
-        const occ = occurrences[slotIdx]
-        const slotUsedH = occ.durationH - slotRemaining
-        const startMin = parseTimeToMinutes(occ.heureDebut) + Math.round(slotUsedH * 60)
-        const allocated = Math.min(seanceRemaining, slotRemaining)
-        const endMin = startMin + Math.round(allocated * 60)
-
-        newEvents.push({
-          id: genId('sc'),
-          anneeScolaireId: anneeId,
-          seanceRubanId: s.id,
-          sequenceId: s.sequenceId,
-          classeId: classe.id,
-          titre: s.titre,
-          type: s.type,
-          date: occ.date,
-          heureDebut: minutesToTimeStr(startMin),
-          heureFin: minutesToTimeStr(endMin),
-          statut: 'à faire',
-          documents: [],
-        })
-
-        seanceRemaining -= allocated
-        slotRemaining -= allocated
-
-        if (slotRemaining < 0.001) {
-          slotIdx++
-          slotRemaining = slotIdx < occurrences.length ? occurrences[slotIdx].durationH : 0
-        }
-      }
+    for (let i = 0; i < toutesSeances.length && i < occurrences.length; i++) {
+      const s = toutesSeances[i]
+      const occ = occurrences[i]
+      newEvents.push({
+        id: genId('sc'),
+        anneeScolaireId: anneeId,
+        seanceRubanId: s.id,
+        sequenceId: s.sequenceId,
+        classeId: classe.id,
+        matiereId: currentMatiere?.id || null,
+        titre: s.titre,
+        type: s.type,
+        date: occ.date,
+        heureDebut: occ.heureDebut,
+        heureFin: occ.heureFin,
+        statut: 'à faire',
+        documents: [],
+      })
     }
 
     // Écriture atomique Firestore : pose le verrou, supprime les anciennes séances
@@ -758,7 +739,8 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
                   )}
                   {seq.documentSupport && (
                     <div className="md:col-span-2">
-                      <a href={seq.documentSupport.data} download={seq.documentSupport.name}
+                      <a href={seq.documentSupport.url || seq.documentSupport.data} download={seq.documentSupport.name}
+                        target="_blank" rel="noreferrer"
                         className="text-blue-500 hover:underline flex items-center gap-1 text-xs">
                         📎 {seq.documentSupport.name}
                       </a>
@@ -934,6 +916,7 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
             <FileUpload
               value={seqForm.documentSupport}
               onChange={f => setSeqForm(prev => ({ ...prev, documentSupport: f }))}
+              storagePath={editSeq ? `${classe.id}/sequences/${editSeq.id}` : `${classe.id}/sequences`}
             />
           </div>
 

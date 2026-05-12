@@ -34,7 +34,7 @@ export default function EmploiDuTemps() {
   const [showCreneauModal, setShowCreneauModal] = useState(false)
   const [editCreneau, setEditCreneau] = useState(null)
   const [creneauPeriodeId, setCreneauPeriodeId] = useState(null)
-  const [creneauForm, setCreneauForm] = useState({ classeId: '', jour: 'lundi', heureDebut: '08:00', heureFin: '10:00' })
+  const [creneauForm, setCreneauForm] = useState({ classeId: '', matiereId: '', jour: 'lundi', heureDebut: '08:00', heureFin: '10:00' })
 
   // ── Vacances
   const [showVacModal, setShowVacModal] = useState(false)
@@ -86,13 +86,20 @@ export default function EmploiDuTemps() {
   function openAddCreneau(periodeId) {
     setCreneauPeriodeId(periodeId)
     setEditCreneau(null)
-    setCreneauForm({ classeId: classList[0]?.id || '', jour: 'lundi', heureDebut: '08:00', heureFin: '10:00' })
+    const defaultClasse = classList[0]
+    setCreneauForm({
+      classeId: defaultClasse?.id || '',
+      matiereId: defaultClasse?.matieres?.[0]?.id || '',
+      jour: 'lundi',
+      heureDebut: '08:00',
+      heureFin: '10:00',
+    })
     setShowCreneauModal(true)
   }
   function openEditCreneau(periodeId, cr) {
     setCreneauPeriodeId(periodeId)
     setEditCreneau(cr)
-    setCreneauForm({ classeId: cr.classeId, jour: cr.jour, heureDebut: cr.heureDebut, heureFin: cr.heureFin })
+    setCreneauForm({ classeId: cr.classeId, matiereId: cr.matiereId || '', jour: cr.jour, heureDebut: cr.heureDebut, heureFin: cr.heureFin })
     setShowCreneauModal(true)
   }
   function saveCreneau() {
@@ -253,6 +260,9 @@ export default function EmploiDuTemps() {
                             >
                               <div className="truncate">{cl?.nom || '?'}</div>
                               <div className="text-gray-600">{cr.heureDebut}–{cr.heureFin}</div>
+                              <div className="truncate opacity-70 mt-0.5" style={{ fontSize: 9 }}>
+                                {cl?.matieres?.find(m => m.id === cr.matiereId)?.nom || 'Non définie'}
+                              </div>
                               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1
                                 bg-black/20 rounded-lg transition-opacity">
                                 <button onClick={() => openEditCreneau(p.id, cr)} className="p-0.5 bg-white rounded">
@@ -434,11 +444,29 @@ export default function EmploiDuTemps() {
           <div>
             <label className="label">Classe</label>
             <select className="input" value={creneauForm.classeId}
-              onChange={e => setCreneauForm(f => ({ ...f, classeId: e.target.value }))}>
+              onChange={e => {
+                const nc = classList.find(c => c.id === e.target.value)
+                setCreneauForm(f => ({ ...f, classeId: e.target.value, matiereId: nc?.matieres?.[0]?.id || '' }))
+              }}>
               {classList.map(c => (
                 <option key={c.id} value={c.id}>{c.nom}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="label">Matière <span className="text-red-400 font-normal">*</span></label>
+            {(classList.find(c => c.id === creneauForm.classeId)?.matieres || []).length === 0 ? (
+              <p className="text-sm text-orange-500 dark:text-orange-400">
+                Ajoutez d'abord des matières à cette classe.
+              </p>
+            ) : (
+              <select className="input" value={creneauForm.matiereId}
+                onChange={e => setCreneauForm(f => ({ ...f, matiereId: e.target.value }))}>
+                {(classList.find(c => c.id === creneauForm.classeId)?.matieres || []).map(m => (
+                  <option key={m.id} value={m.id}>{m.nom}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label className="label">Jour</label>

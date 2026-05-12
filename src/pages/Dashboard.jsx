@@ -409,7 +409,10 @@ export default function Dashboard() {
                             </p>
                             {height > 34 && (
                               <p style={{ fontSize: 10, color: '#374151', opacity: 0.75, margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {cl?.nom || '?'}
+                                {[
+                                  cl?.matieres?.find(m => m.id === s.matiereId)?.nom || (s.matiereId ? 'Non définie' : null),
+                                  cl?.nom || '?',
+                                ].filter(Boolean).join(' · ')}
                               </p>
                             )}
                           </div>
