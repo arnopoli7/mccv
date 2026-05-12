@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import guyRoux from '../assets/guyroux.png'
+import yannPhoto from '../assets/yann.png'
 import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Printer,
@@ -106,29 +107,51 @@ export default function Dashboard() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Bienvenue */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Bonjour, {user?.nom || user?.login} 👋
-          </h2>
-          <p className="text-2xl font-bold mt-0.5" style={{ color: '#003F8A' }}>
-            {user?.slogan || 'Éleveur de Champions ! 🏆'}
-          </p>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
-            {anneeActive ? `Année ${anneeActive.label}` : 'Aucune année configurée'}
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <img
-            src={guyRoux}
-            alt="Guy Roux"
-            style={{ height: 150, borderRadius: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
-          />
-          <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 no-print">
-            <Printer size={15} /> Imprimer la semaine
-          </button>
-        </div>
-      </div>
+      {(() => {
+        const login = user?.login
+        const photoSrc = login === 'Arnaud7' ? guyRoux : login === 'YannW' ? yannPhoto : null
+        const slogan = login === 'Arnaud7'
+          ? 'Éleveur de Champions ! 🏆'
+          : login === 'YannW'
+          ? 'Un traiteur intraitable ! 👨‍🍳'
+          : (user?.slogan || '')
+        return (
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Bonjour, {user?.nom || user?.login} 👋
+              </h2>
+              {slogan && (
+                <p className="text-2xl font-bold mt-0.5" style={{ color: '#003F8A' }}>
+                  {slogan}
+                </p>
+              )}
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">
+                {anneeActive ? `Année ${anneeActive.label}` : 'Aucune année configurée'}
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              {photoSrc ? (
+                <img
+                  src={photoSrc}
+                  alt={login}
+                  style={{ height: 150, borderRadius: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+                />
+              ) : (
+                <div
+                  className="flex items-center justify-center font-bold text-white text-3xl shrink-0"
+                  style={{ width: 100, height: 100, borderRadius: 12, backgroundColor: '#6366f1', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+                >
+                  {(user?.nom || user?.login || '?')[0].toUpperCase()}
+                </div>
+              )}
+              <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 no-print">
+                <Printer size={15} /> Imprimer la semaine
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── VIGNETTES CLASSES ── */}
       {classList.length > 0 && (
