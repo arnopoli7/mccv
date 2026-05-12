@@ -13,7 +13,7 @@ import { isInVacances, parseISO, addDays, toISODate, formatDate } from '../../ut
 const TYPES_SEANCE = ['Cours', 'TD / Exercices', 'Évaluation']
 
 export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
-  const { get, set, add, update, remove, classes, anneesScolaires, getParams } = useData()
+  const { get, set, setAndAwait, add, update, remove, classes, anneesScolaires, getParams } = useData()
   const { getCurrentUser } = useAuth()
   const toast = useToast()
   const user = getCurrentUser()
@@ -52,6 +52,8 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
   // Deploy
   const [showDeployModal, setShowDeployModal] = useState(false)
   const [showDeployConfirm, setShowDeployConfirm] = useState(false)
+  const [isDeploying, setIsDeploying] = useState(false)
+  const isDeployingRef = useRef(false)
 
   // Duplication
   const [showDupliquerModal, setShowDupliquerModal] = useState(false)
@@ -228,7 +230,12 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
     }
   }
 
-  function deployerSurCalendrier() {
+  async function deployerSurCalendrier() {
+    // Verrou : empêche tout déploiement concurrent
+    if (isDeployingRef.current) {
+      toast.warning('Un déploiement est déjà en cours, veuillez patienter.')
+      return
+    }
     if (!ruban || !anneeId) return
 
     const periodes = get('emploiDuTemps').filter(p => p.anneeScolaireId === anneeId)
@@ -368,33 +375,47 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       }
     }
 
-    // PROBLÈME 1 — remplacement atomique : supprimer TOUTES les séances de cette classe/année
-    // puis ajouter les nouvelles en une seule opération set()
-    const allCal = get('seancesCalendrier')
-    const keptCal = allCal.filter(
-      sc => !(sc.classeId === classe.id && sc.anneeScolaireId === anneeId)
-    )
-    set('seancesCalendrier', [...keptCal, ...newEvents])
+    // Écriture atomique Firestore : pose le verrou, supprime les anciennes séances
+    // de cette classe/année, écrit les nouvelles, et attend la confirmation Firestore
+    // avant de continuer — empêche toute race condition entre déploiements successifs.
+    isDeployingRef.current = true
+    setIsDeploying(true)
+    try {
+      const allCal = get('seancesCalendrier')
+      const keptCal = allCal.filter(
+        sc => !(sc.classeId === classe.id && sc.anneeScolaireId === anneeId)
+      )
+      await setAndAwait('seancesCalendrier', [...keptCal, ...newEvents])
 
-    setShowDeployModal(false)
-    setShowDeployConfirm(false)
+      setShowDeployModal(false)
+      setShowDeployConfirm(false)
 
-    const seancesDéployées = new Set(newEvents.map(e => e.seanceRubanId)).size
-    if (newEvents.length > 0) {
-      const dates = newEvents.map(e => e.date).sort()
-      const debut = formatDate(dates[0])
-      const fin = formatDate(dates[dates.length - 1])
-      if (seancesDéployées < toutesSeances.length) {
-        toast.warning(`${seancesDéployées}/${toutesSeances.length} séances déployées du ${debut} au ${fin} (créneaux insuffisants).`)
-      } else {
-        toast.success(`${seancesDéployées} séances déployées du ${debut} au ${fin} ✓`)
+      // Vérification : chaque séance du ruban doit avoir au moins un événement calendrier
+      const seancesDeployees = new Set(newEvents.map(e => e.seanceRubanId))
+      const seancesDéployées = seancesDeployees.size
+      if (newEvents.length > 0) {
+        const dates = newEvents.map(e => e.date).sort()
+        const debut = formatDate(dates[0])
+        const fin = formatDate(dates[dates.length - 1])
+        if (seancesDéployées < toutesSeances.length) {
+          toast.warning(`${seancesDéployées}/${toutesSeances.length} séances déployées du ${debut} au ${fin} (créneaux insuffisants).`)
+        } else {
+          toast.success(`${seancesDéployées} séances déployées du ${debut} au ${fin} ✓`)
+        }
       }
-    }
 
-    // Afficher les messages de décalage par stage
-    Object.entries(stageSkips).forEach(([nom, count]) => {
-      toast.info(`${count} séance(s) décalée(s) suite au stage "${nom}"`)
-    })
+      Object.entries(stageSkips).forEach(([nom, count]) => {
+        toast.info(`${count} séance(s) décalée(s) suite au stage "${nom}"`)
+      })
+    } catch (err) {
+      console.error('Deployment error:', err)
+      toast.error("Erreur lors de l'écriture en base. Le déploiement a échoué, réessayez.")
+      setShowDeployModal(false)
+      setShowDeployConfirm(false)
+    } finally {
+      isDeployingRef.current = false
+      setIsDeploying(false)
+    }
   }
 
   // ── Duplication du ruban
@@ -1027,8 +1048,12 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
           </div>
           <div className="flex justify-end gap-3">
             <button className="btn-secondary" onClick={() => setShowDeployModal(false)}>Annuler</button>
-            <button className="btn-primary flex items-center gap-2" onClick={deployerSurCalendrier}>
-              <Rocket size={14} /> Déployer
+            <button
+              className="btn-primary flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              onClick={deployerSurCalendrier}
+              disabled={isDeploying}
+            >
+              <Rocket size={14} /> {isDeploying ? 'Déploiement en cours…' : 'Déployer'}
             </button>
           </div>
         </div>

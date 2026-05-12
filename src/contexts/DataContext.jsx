@@ -122,6 +122,13 @@ export function DataProvider({ children }) {
     saveCollectionToFirestore(userId, collection, items)
   }
 
+  // Comme set() mais attend la confirmation Firestore (lance une exception en cas d'échec)
+  async function setAndAwait(collection, items) {
+    if (!userId) return
+    applyMutation(collection, items)
+    await setDoc(colRef(userId, collection), { items })
+  }
+
   function add(collection, item) {
     if (!userId) return
     const newItems = [...(localDataRef.current[collection] || []), item]
@@ -224,7 +231,7 @@ export function DataProvider({ children }) {
 
   const value = {
     refreshKey, refresh, dataLoading,
-    get, set, add, update, remove, find,
+    get, set, setAndAwait, add, update, remove, find,
     getParams, setParams,
     anneesScolaires, getAnneeActive,
     classes, vacances, emploiDuTemps,
