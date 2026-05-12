@@ -287,28 +287,36 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
           .filter(cr => JOUR_MAP[cr.jour] === dayOfWeek)
           .sort((a, b) => (a.heureDebut || '00:00').localeCompare(b.heureDebut || '00:00'))
 
-        for (const cr of dayCreneaux) {
-          // Sauter si vacances
-          if (isInVacances(current, vacancesList)) continue
-
-          // Sauter si période de stage — et compter
+        if (dayCreneaux.length > 0 && !isInVacances(current, vacancesList)) {
           const stageHit = stagesList.find(s => isInVacances(current, [s]))
           if (stageHit) {
             stageSkips[stageHit.nom] = (stageSkips[stageHit.nom] || 0) + 1
-            continue
-          }
-
-          // PROBLÈME 2 — s'assurer que les heures sont bien des chaînes valides
-          const heureDebut = (cr.heureDebut || '').trim() || '00:00'
-          const heureFin = (cr.heureFin || '').trim() || '00:00'
-          const durationH = (parseTimeToMinutes(heureFin) - parseTimeToMinutes(heureDebut)) / 60
-          if (durationH > 0) {
-            occurrences.push({
-              date: toISODate(current),
-              heureDebut,
-              heureFin,
-              durationH,
-            })
+          } else {
+            // Fusionner les créneaux chevauchants ou adjacents du même jour
+            // pour éviter les doublons et calculer la durée réelle disponible
+            const merged = []
+            for (const cr of dayCreneaux) {
+              const hd = parseTimeToMinutes((cr.heureDebut || '').trim() || '00:00')
+              const hf = parseTimeToMinutes((cr.heureFin || '').trim() || '00:00')
+              if (hf <= hd) continue
+              if (merged.length > 0 && hd <= merged[merged.length - 1].finMin) {
+                // Chevauchement ou adjacence : étendre le dernier créneau fusionné
+                merged[merged.length - 1].finMin = Math.max(merged[merged.length - 1].finMin, hf)
+              } else {
+                merged.push({ debutMin: hd, finMin: hf })
+              }
+            }
+            for (const m of merged) {
+              const durationH = (m.finMin - m.debutMin) / 60
+              if (durationH > 0) {
+                occurrences.push({
+                  date: toISODate(current),
+                  heureDebut: minutesToTimeStr(m.debutMin),
+                  heureFin: minutesToTimeStr(m.finMin),
+                  durationH,
+                })
+              }
+            }
           }
         }
         current = addDays(current, 1)
