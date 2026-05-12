@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import guyRoux from '../assets/guy-roux.png'
+import guyRoux from '../assets/guyroux.png'
 import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Printer,
