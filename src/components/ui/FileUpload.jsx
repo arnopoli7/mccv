@@ -33,14 +33,53 @@ function getFileIcon(file) {
   return '📎'
 }
 
-const MAX_SIZE_BYTES = 500 * 1024 // 500 Ko
+const MAX_SIZE_BYTES = 5 * 1024 * 1024  // 5 Mo
+const COMPRESS_THRESHOLD = 500 * 1024   // compresser les images > 500 Ko
 const ACCEPT_ALL = '.pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'
 const ACCEPTED_EXTS = /\.(pdf|ppt|pptx|doc|docx|xls|xlsx|jpg|jpeg|png)$/i
 
 function validateFile(file) {
-  if (file.size > MAX_SIZE_BYTES) return 'Fichier trop volumineux (max 500 Ko)'
+  if (file.size > MAX_SIZE_BYTES) return 'Fichier trop volumineux (max 5 Mo)'
   if (!ACCEPTED_EXTS.test(file.name)) return 'Format non supporté'
   return null
+}
+
+// Compression image via Canvas (images > COMPRESS_THRESHOLD uniquement)
+function compressImage(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      const MAX_DIM = 1400
+      let { width, height } = img
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / width, MAX_DIM / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+      URL.revokeObjectURL(url)
+      const data = canvas.toDataURL('image/jpeg', 0.78)
+      const size = Math.round((data.length * 3) / 4)
+      const name = file.name.replace(/\.[^.]+$/, '.jpg')
+      resolve({ name, size, type: 'image/jpeg', data })
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null) }
+    img.src = url
+  })
+}
+
+const IMAGE_EXTS = /\.(jpg|jpeg|png|gif|webp)$/i
+
+async function readFile(file) {
+  if (IMAGE_EXTS.test(file.name) && file.size > COMPRESS_THRESHOLD) {
+    const compressed = await compressImage(file)
+    if (compressed) return compressed
+  }
+  return fileToBase64(file)
 }
 
 // ─── FileUpload (fichier unique) ─────────────────────────────────────────────
@@ -64,7 +103,7 @@ export default function FileUpload({ value, onChange, label = 'Déposer un fichi
 
     setUploading(true)
     try {
-      const data = await fileToBase64(file)
+      const data = await readFile(file)
       onChange(data)
     } catch {
       toast.error('Erreur lors de la lecture du fichier.')
@@ -152,7 +191,7 @@ export function MultiFileUpload({ files = [], onAdd, onRemove, storagePath: _sp 
 
     setUploading(true)
     try {
-      const data = await fileToBase64(file)
+      const data = await readFile(file)
       onAdd(data)
     } catch {
       toast.error('Erreur lors de la lecture du fichier.')
