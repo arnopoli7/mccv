@@ -117,7 +117,7 @@ export default function Screensaver() {
         setQuoteIndex(i => (i + 1) % QUOTES.length)
         setFadeIn(true)
       }, 500)
-    }, 4000)
+    }, 10000)
     return () => clearInterval(interval)
   }, [active])
 
