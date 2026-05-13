@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import BottomNav from './BottomNav'
+import Screensaver from '../ui/Screensaver'
 
 export default function Layout({ children }) {
   // Collapsed by default on small screens (< 1024px)
@@ -23,6 +24,7 @@ export default function Layout({ children }) {
         </div>
       </main>
       <BottomNav />
+      <Screensaver />
     </div>
   )
 }
