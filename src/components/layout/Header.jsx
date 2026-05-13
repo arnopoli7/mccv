@@ -123,10 +123,10 @@ export default function Header({ sidebarWidth }) {
       </h1>
 
       {/* Bandeau année archivée */}
-      {anneeActive && !anneeActive.active && (
+      {anneeActive?.archived && (
         <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300 px-3 py-1 rounded-full">
           <Archive size={13} />
-          Année archivée — consultation uniquement
+          {anneeActive.label} — Consultation uniquement
         </div>
       )}
 

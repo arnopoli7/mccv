@@ -10,6 +10,12 @@ const QUOTES = [
   { text: "Tout va bien, l'AJA a gagné ! ⚽🎉", author: "A.P", date: "11/05/2026" },
   { text: "J'ai les pépites de 4ème ! 💎😍", author: "S.C", date: "07/05/2026" },
   { text: "Les femmes sont faites pour faire la vaisselle ! 🍽️😱", author: "F.S", date: "01/09/2025" },
+  { text: "🖥️ J'ai mis le devoir sur l'ENT... mais les élèves ont dit que l'ENT était down. Comme par hasard, un lundi matin." },
+  { text: "🧑‍🦯 L'AESH de Kevin est absente aujourd'hui, donc Kevin a décidé que lui aussi il était absent." },
+  { text: "📋 La CPE m'a convoqué pour un PAP, un PAI, et un PPS... j'ai cru que c'était un jeu de société." },
+  { text: "📚 La SEGPA a emprunté la salle informatique, l'UPE2A a pris la salle de réunion... moi je fais cours dans le couloir. C'est ça, l'inclusion." },
+  { text: "🏫 Réunion de conseil de classe : le PP parle, le DOC parle, la Vie Sco parle... l'élève concerné, lui, il dort tranquillement en cours." },
+  { text: "📱 L'AVS a dit à l'élève de ranger son téléphone. L'élève a répondu que c'était son outil de compensation. On est en 2026, tout est outil de compensation." },
 ]
 
 const COLORS = [
@@ -243,17 +249,19 @@ export default function Screensaver() {
         }}>
           &ldquo;{quote.text}&rdquo;
         </p>
-        <p style={{
-          marginTop: 12,
-          fontSize: 'clamp(0.85rem, 1.5vw, 1rem)',
-          color: '#FFD700',
-          fontStyle: 'italic',
-          letterSpacing: '0.06em',
-          margin: '12px 0 0',
-          textShadow: '0 0 12px rgba(255,215,0,0.5)',
-        }}>
-          — {quote.author} &bull; {quote.date}
-        </p>
+        {quote.author && (
+          <p style={{
+            marginTop: 12,
+            fontSize: 'clamp(0.85rem, 1.5vw, 1rem)',
+            color: '#FFD700',
+            fontStyle: 'italic',
+            letterSpacing: '0.06em',
+            margin: '12px 0 0',
+            textShadow: '0 0 12px rgba(255,215,0,0.5)',
+          }}>
+            — {quote.author} &bull; {quote.date}
+          </p>
+        )}
       </div>
 
       {/* Hint bas de page */}

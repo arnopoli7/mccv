@@ -5,7 +5,7 @@ import furlanPhoto from '../assets/furlan.jpg'
 import jeanMarcPhoto from '../assets/jeanmarc.webp'
 import { useNavigate } from 'react-router-dom'
 import {
-  ChevronLeft, ChevronRight, Printer,
+  ChevronLeft, ChevronRight, Printer, CalendarPlus,
   AlertCircle, AlertTriangle, CheckCircle, CalendarDays,
 } from 'lucide-react'
 import { useData } from '../contexts/DataContext'
@@ -15,13 +15,15 @@ import {
   formatDate, isInVacances,
   parseISO, isBefore, isSameDay, toISODate, getDaysUntilJune30, fr,
 } from '../utils/dateUtils'
-import { format } from 'date-fns'
+import { format, differenceInDays } from 'date-fns'
+import NouvelleAnneeWizard from './NouvelleAnneeWizard'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { getCurrentUser } = useAuth()
+  const { getCurrentUser, isAdmin } = useAuth()
   const { classes, seancesCalendrier, rubanPedagogique, vacances, stages, getAnneeActive, cleanOrphanCalendarEvents } = useData()
   const user = getCurrentUser()
+  const [showWizard, setShowWizard] = useState(false)
 
   const anneeActive = getAnneeActive()
   const anneeId = anneeActive?.id
@@ -106,6 +108,14 @@ export default function Dashboard() {
     ? getDaysUntilJune30(parseInt(anneeActive.label?.split('-')?.[1] || '2026'))
     : null
 
+  // Bouton "Nouvelle année" : visible si fin d'année dans < 90 jours OU admin
+  const showNouvelleAnneeBtn = (() => {
+    if (isAdmin()) return true
+    if (!anneeActive?.dateFin) return false
+    const daysToEnd = differenceInDays(parseISO(anneeActive.dateFin), today)
+    return daysToEnd < 90
+  })()
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Bienvenue */}
@@ -155,9 +165,19 @@ export default function Dashboard() {
                   {(user?.nom || user?.login || '?')[0].toUpperCase()}
                 </div>
               )}
-              <button onClick={() => window.print()} className="btn-secondary hidden sm:flex items-center gap-2 no-print">
-                <Printer size={15} /> Imprimer la semaine
-              </button>
+              <div className="flex flex-col gap-2 no-print">
+                <button onClick={() => window.print()} className="btn-secondary hidden sm:flex items-center gap-2">
+                  <Printer size={15} /> Imprimer la semaine
+                </button>
+                {showNouvelleAnneeBtn && (
+                  <button
+                    onClick={() => setShowWizard(true)}
+                    className="btn-primary hidden sm:flex items-center gap-2 text-sm"
+                  >
+                    <CalendarPlus size={15} /> Nouvelle année scolaire
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )
@@ -480,6 +500,72 @@ export default function Dashboard() {
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-gray-200 dark:bg-gray-600 inline-block" />Vacances</span>
         </div>
       </div>
+
+      {/* ── SECTION IMPRESSION UNIQUEMENT ── */}
+      <div className="print-only">
+        {/* En-tête */}
+        <div className="mb-6 pb-4 border-b-2">
+          <h1 className="text-xl font-bold">
+            {user?.nom || user?.login || ''}
+            {anneeActive ? ` — ${anneeActive.label}` : ''}
+          </h1>
+          <p className="text-sm text-gray-500">
+            Semaine du {formatDate(weekStart)} — Emploi du temps
+          </p>
+        </div>
+
+        {/* Séances de la semaine */}
+        <div>
+          {weekDays.map((day, i) => {
+            const daySeances = getSeancesForDay(day)
+            if (daySeances.length === 0) return null
+            return (
+              <div key={i} className="mb-4">
+                <h2 className="font-bold text-base border-b pb-1 mb-2" style={{ textTransform: 'capitalize' }}>
+                  {format(day, 'EEEE d MMMM yyyy', { locale: fr })}
+                </h2>
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-1 font-semibold w-24">Horaire</th>
+                      <th className="text-left py-1 font-semibold w-28">Classe</th>
+                      <th className="text-left py-1 font-semibold">Titre</th>
+                      <th className="text-left py-1 font-semibold w-28">Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {daySeances.map(s => {
+                      const cl = classList.find(c => c.id === s.classeId)
+                      return (
+                        <tr key={s.id} className="border-b border-gray-100">
+                          <td className="py-1 text-gray-600">
+                            {s.heureDebut || '—'}{s.heureFin ? ` → ${s.heureFin}` : ''}
+                          </td>
+                          <td className="py-1 font-medium">{cl?.nom || '?'}</td>
+                          <td className="py-1">{s.titre || '—'}</td>
+                          <td className="py-1 text-gray-500">{s.type || '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })}
+          {weekDays.every(day => getSeancesForDay(day).length === 0) && (
+            <p className="text-gray-400 italic text-sm">Aucune séance cette semaine.</p>
+          )}
+        </div>
+
+        {/* Pied de page */}
+        <div className="mt-8 pt-4 border-t text-xs text-gray-400 flex justify-between">
+          <span>MCCV — Mon Cahier de Cours Virtuel</span>
+          <span>Imprimé le {format(today, 'd/M/yyyy')}</span>
+        </div>
+      </div>
+
+      {/* ── Wizard nouvelle année ── */}
+      {showWizard && <NouvelleAnneeWizard onClose={() => setShowWizard(false)} />}
     </div>
   )
 }

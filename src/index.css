@@ -45,6 +45,34 @@
 @media print {
   .no-print { display: none !important; }
   .print-only { display: block !important; }
+
+  /* Masquer navigation, sidebar, header */
+  .layout-header,
+  .layout-sidebar-el,
+  .layout-bottom-nav { display: none !important; }
+
+  /* Main prend toute la largeur */
+  .layout-main {
+    margin-left: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  /* Fond blanc, police lisible */
+  body {
+    background: white !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 11pt !important;
+    color: black !important;
+  }
+
+  /* Marges correctes */
+  @page {
+    margin: 2cm;
+    size: portrait;
+  }
+
+  /* Éviter les coupures dans les blocs */
+  .card, .break-inside-avoid { break-inside: avoid; }
 }
 .print-only { display: none; }
 

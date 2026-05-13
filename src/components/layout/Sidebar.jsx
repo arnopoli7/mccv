@@ -33,7 +33,7 @@ export default function Sidebar({ collapsed, onToggle }) {
 
   return (
     <aside
-      className={`fixed left-0 top-0 bottom-0 z-40 hidden md:flex flex-col bg-gray-900 dark:bg-gray-950
+      className={`layout-sidebar-el fixed left-0 top-0 bottom-0 z-40 hidden md:flex flex-col bg-gray-900 dark:bg-gray-950
         text-white transition-all duration-300 ${collapsed ? 'w-16' : 'w-56'}`}
     >
       {/* Logo */}
