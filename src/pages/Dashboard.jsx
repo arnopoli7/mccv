@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import guyRoux from '../assets/guyroux.png'
 import yannPhoto from '../assets/yann.png'
 import furlanPhoto from '../assets/furlan.jpg'
+import jeanMarcPhoto from '../assets/jeanmarc.webp'
 import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Printer,
@@ -112,14 +113,17 @@ export default function Dashboard() {
         const login = user?.login
         const photoSrc = login === 'Arnaud7' ? guyRoux
           : login === 'YannW' ? yannPhoto
-          : login === 'StéphaneC' ? furlanPhoto
+          : (login === 'StéphaneC' || login === 'StephaneC') ? furlanPhoto
+          : login === 'JeanMarcF' ? jeanMarcPhoto
           : null
         const slogan = login === 'Arnaud7'
           ? 'Éleveur de Champions ! 🏆'
           : login === 'YannW'
           ? 'Un traiteur intraitable ! 👨‍🍳'
-          : login === 'StéphaneC'
+          : (login === 'StéphaneC' || login === 'StephaneC')
           ? 'C\'est multi factoriel ! 🔢'
+          : login === 'JeanMarcF'
+          ? 'Si vous traversez l\'enfer.... Surtout continuez d\'avancer ! 💪🔥'
           : (user?.slogan || '')
         return (
           <div className="flex items-center justify-between">
