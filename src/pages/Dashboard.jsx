@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import guyRoux from '../assets/guyroux.png'
 import yannPhoto from '../assets/yann.png'
+import furlanPhoto from '../assets/furlan.jpg'
 import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Printer,
@@ -109,11 +110,16 @@ export default function Dashboard() {
       {/* Bienvenue */}
       {(() => {
         const login = user?.login
-        const photoSrc = login === 'Arnaud7' ? guyRoux : login === 'YannW' ? yannPhoto : null
+        const photoSrc = login === 'Arnaud7' ? guyRoux
+          : login === 'YannW' ? yannPhoto
+          : login === 'StéphaneC' ? furlanPhoto
+          : null
         const slogan = login === 'Arnaud7'
           ? 'Éleveur de Champions ! 🏆'
           : login === 'YannW'
           ? 'Un traiteur intraitable ! 👨‍🍳'
+          : login === 'StéphaneC'
+          ? 'C\'est multi factoriel ! 🔢'
           : (user?.slogan || '')
         return (
           <div className="flex items-center justify-between">
@@ -135,7 +141,7 @@ export default function Dashboard() {
                 <img
                   src={photoSrc}
                   alt={login}
-                  style={{ height: 150, borderRadius: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+                  className="welcome-photo"
                 />
               ) : (
                 <div
@@ -145,7 +151,7 @@ export default function Dashboard() {
                   {(user?.nom || user?.login || '?')[0].toUpperCase()}
                 </div>
               )}
-              <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 no-print">
+              <button onClick={() => window.print()} className="btn-secondary hidden sm:flex items-center gap-2 no-print">
                 <Printer size={15} /> Imprimer la semaine
               </button>
             </div>
@@ -355,6 +361,8 @@ export default function Dashboard() {
         </div>
 
         <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+          <div style={{ minWidth: 480 }}>
           {/* Header jours */}
           <div className="flex border-b border-gray-100 dark:border-gray-700">
             <div className="w-12 shrink-0 border-r border-gray-100 dark:border-gray-700" />
@@ -444,9 +452,9 @@ export default function Dashboard() {
                             {height > 34 && (
                               <p style={{ fontSize: 10, color: '#374151', opacity: 0.75, margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {[
-                                  cl?.matieres?.find(m => m.id === s.matiereId)?.nom || (s.matiereId ? 'Non définie' : null),
+                                  cl?.matieres?.find(m => m.id === s.matiereId)?.nom || 'Matière non définie',
                                   cl?.nom || '?',
-                                ].filter(Boolean).join(' · ')}
+                                ].join(' · ')}
                               </p>
                             )}
                           </div>
@@ -458,8 +466,9 @@ export default function Dashboard() {
               })}
             </div>
           </div>
+          </div>
         </div>
-
+        </div>
         <div className="flex flex-wrap gap-4 mt-2 text-xs text-gray-400 no-print">
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: '#3b82f6' }} />Cours</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: '#f97316' }} />TD / Exercices</span>

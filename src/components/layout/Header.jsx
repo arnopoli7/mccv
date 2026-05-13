@@ -114,7 +114,7 @@ export default function Header({ sidebarWidth }) {
   return (
     <header
       className="fixed top-0 right-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700
-        flex items-center gap-4 px-6 h-14"
+        flex items-center gap-2 md:gap-4 px-3 md:px-6 h-14 layout-header"
       style={{ left: sidebarWidth }}
     >
       {/* Titre page */}
@@ -133,7 +133,7 @@ export default function Header({ sidebarWidth }) {
       <div className="flex-1" />
 
       {/* Recherche globale */}
-      <div ref={searchRef} className="relative">
+      <div ref={searchRef} className="relative hidden sm:block">
         <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-1.5">
           <Search size={15} className="text-gray-400" />
           <input
@@ -142,7 +142,7 @@ export default function Header({ sidebarWidth }) {
             value={searchQ}
             onChange={e => doSearch(e.target.value)}
             onFocus={() => setShowSearch(true)}
-            className="bg-transparent text-sm outline-none text-gray-700 dark:text-gray-200 w-48
+            className="bg-transparent text-sm outline-none text-gray-700 dark:text-gray-200 w-36 md:w-48
               placeholder:text-gray-400"
           />
         </div>

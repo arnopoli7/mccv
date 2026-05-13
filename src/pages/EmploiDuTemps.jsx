@@ -197,12 +197,12 @@ export default function EmploiDuTemps() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1 overflow-x-auto">
         {[['periodes', 'Périodes & créneaux'], ['vacances', 'Vacances scolaires'], ['stages', 'Périodes de stage']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap
               ${tab === key ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
           >
             {label}
@@ -244,7 +244,8 @@ export default function EmploiDuTemps() {
 
               {/* Grille créneaux */}
               {p.creneaux?.length > 0 ? (
-                <div className="grid grid-cols-5 gap-2 mb-3">
+                <div className="overflow-x-auto mb-3">
+                <div className="grid grid-cols-5 gap-2" style={{ minWidth: 360 }}>
                   {JOURS.map(jour => {
                     const crs = (p.creneaux || []).filter(c => c.jour === jour)
                     return (
@@ -279,6 +280,7 @@ export default function EmploiDuTemps() {
                     )
                   })}
                 </div>
+                </div>
               ) : (
                 <p className="text-sm text-gray-400 mb-3">Aucun créneau.</p>
               )}
@@ -303,7 +305,7 @@ export default function EmploiDuTemps() {
             </button>
           </div>
 
-          <div className="card overflow-hidden">
+          <div className="card overflow-hidden table-scroll-wrapper">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>

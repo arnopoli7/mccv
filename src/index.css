@@ -47,3 +47,42 @@
   .print-only { display: block !important; }
 }
 .print-only { display: none; }
+
+/* Photo de bienvenue responsive */
+.welcome-photo {
+  height: 150px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  object-fit: cover;
+}
+
+/* Responsive mobile : masquer la sidebar, désactiver les marges */
+@media (max-width: 767px) {
+  .layout-main  { margin-left: 0 !important; }
+  .layout-header { left: 0 !important; }
+  .welcome-photo { height: 80px; }
+}
+
+/* Touch targets minimum 44px — sauf les icônes et les badges inline */
+@media (max-width: 767px) {
+  .btn-primary, .btn-secondary, .btn-danger {
+    min-height: 44px;
+  }
+  /* Éviter le zoom auto iOS sur les inputs */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe area pour iPhone avec notch */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Tableaux scrollables sur mobile */
+@media (max-width: 767px) {
+  .table-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

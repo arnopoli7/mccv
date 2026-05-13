@@ -118,8 +118,18 @@ function CalToolbar({ onNavigate, label, view, onView }) {
       </div>
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
         <button
+          onClick={() => onView(Views.DAY)}
+          className={`px-2 md:px-3 py-1 text-xs rounded-md font-medium transition-colors ${
+            view === Views.DAY
+              ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}
+        >
+          Jour
+        </button>
+        <button
           onClick={() => onView(Views.WEEK)}
-          className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${
+          className={`px-2 md:px-3 py-1 text-xs rounded-md font-medium transition-colors ${
             view === Views.WEEK
               ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm'
               : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -129,7 +139,7 @@ function CalToolbar({ onNavigate, label, view, onView }) {
         </button>
         <button
           onClick={() => onView(Views.MONTH)}
-          className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${
+          className={`px-2 md:px-3 py-1 text-xs rounded-md font-medium transition-colors ${
             view === Views.MONTH
               ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm'
               : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -146,7 +156,9 @@ export default function Calendrier() {
   const { classes, seancesCalendrier, rubanPedagogique, vacances, stages, getAnneeActive, update, cleanOrphanCalendarEvents } = useData()
   const toast = useToast()
 
-  const [calView, setCalView] = useState(Views.WEEK)
+  const [calView, setCalView] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 768 ? Views.DAY : Views.WEEK
+  )
   const [calDate, setCalDate] = useState(new Date())
   const [filterClasseId, setFilterClasseId] = useState('all')
   const [selectedEvent, setSelectedEvent] = useState(null)
@@ -193,7 +205,7 @@ export default function Calendrier() {
     const classe = allClasses.find(c => c.id === s.classeId)
     const matiereNom = s.matiereId
       ? (classe?.matieres?.find(m => m.id === s.matiereId)?.nom || 'Non définie')
-      : null
+      : 'Matière non définie'
     const start = combineDateAndTime(s.date, s.heureDebut || '08:00')
     const end = combineDateAndTime(s.date, s.heureFin || '09:00')
     return {
