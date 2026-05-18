@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, BookOpen, Loader2, RefreshCw, Check, X, ChevronDown, ChevronRight, Eye, EyeOff, AlertTriangle } from 'lucide-react'
+import { Sparkles, BookOpen, Loader2, RefreshCw, Check, X, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
-import { useAuth } from '../contexts/AuthContext'
 import { genId } from '../utils/id'
 
-function apiKeyStorageKey(userId) {
-  return `mccv_anthropic_api_key_${userId}`
-}
+const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || ''
+const API_URL = import.meta.env.DEV
+  ? '/api/anthropic/v1/messages'
+  : 'https://api.anthropic.com/v1/messages'
 
 function normalizeType(type) {
   if (!type) return 'Cours'
@@ -37,14 +37,10 @@ function buildSequences(rawSequences) {
 
 export default function Generateur() {
   const { get, add, update, getAnneeActive } = useData()
-  const { session } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
-  const userId = session?.userId
-
   const [selected, setSelected] = useState(null) // null | 'ruban'
-  const [showApiKey, setShowApiKey] = useState(false)
   const [form, setForm] = useState({
     classeId: '',
     niveau: '',
@@ -53,7 +49,6 @@ export default function Generateur() {
     volume: '',
     nbSequences: '',
     nbEvals: '',
-    apiKey: userId ? (localStorage.getItem(apiKeyStorageKey(userId)) || '') : '',
   })
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
@@ -96,9 +91,8 @@ export default function Generateur() {
     if (form.nbEvals === '' || isNaN(Number(form.nbEvals)) || Number(form.nbEvals) < 0) {
       toast.error("Nombre d'évaluations invalide."); return
     }
-    if (!form.apiKey.trim()) { toast.error('Renseignez votre clé API Anthropic.'); return }
+    if (!API_KEY) { toast.error('Clé API Anthropic non configurée (variable VITE_ANTHROPIC_API_KEY manquante).'); return }
 
-    if (userId) localStorage.setItem(apiKeyStorageKey(userId), form.apiKey.trim())
     setLoading(true)
     setError(null)
     setResult(null)
@@ -133,11 +127,11 @@ Contraintes :
 Réponds UNIQUEMENT avec le JSON, sans texte avant ou après.`
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': form.apiKey.trim(),
+          'x-api-key': API_KEY,
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true',
         },
@@ -458,33 +452,13 @@ Réponds UNIQUEMENT avec le JSON, sans texte avant ou après.`
             </div>
           </div>
 
-          {/* Clé API */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Clé API Anthropic <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showApiKey ? 'text' : 'password'}
-                value={form.apiKey}
-                onChange={e => setField('apiKey', e.target.value)}
-                placeholder="sk-ant-..."
-                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700
-                  text-gray-900 dark:text-white px-3 py-2 pr-10 text-sm font-mono
-                  focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <button
-                type="button"
-                onClick={() => setShowApiKey(v => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              >
-                {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
+          {!API_KEY && (
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800
+              text-amber-700 dark:text-amber-400 text-sm px-4 py-3">
+              ⚠️ Variable <code className="font-mono">VITE_ANTHROPIC_API_KEY</code> non définie dans le fichier <code className="font-mono">.env</code>.
+              La génération ne fonctionnera pas.
             </div>
-            <p className="text-xs text-gray-400 mt-1">
-              Votre clé est sauvegardée localement dans ce navigateur.
-            </p>
-          </div>
+          )}
 
           {error && (
             <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800
