@@ -512,158 +512,314 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
       prs.layout = 'LAYOUT_WIDE' // 10 × 5.625 inches
 
       const pal = pptSelectedPalette
-      const h = c => c.replace('#', '')
+      const hex = c => c.replace('#', '')
       const C = {
-        primary: h(pal.primary), accent: h(pal.accent),
-        light: h(pal.light),     pale:   h(pal.pale),
-        white: 'FFFFFF', dark: '1a1a2e', amber: 'F59E0B',
-        text: '1F2937',  gray: '6B7280',
+        primary:  hex(pal.primary),
+        accent:   hex(pal.accent),
+        light:    hex(pal.light),
+        pale:     hex(pal.pale),
+        white:    'FFFFFF',
+        dark:     '1E1E2E',
+        darkCard: '2D2D3F',
+        amber:    'F59E0B',
+        text:     '2C2C2C',
+        gray:     '9CA3AF',
       }
-      const W = 10, H = 5.625, BAND_H = 0.85
 
-      for (const slide of pptResult.slides) {
+      // Layout constants (inches, LAYOUT_WIDE = 10 × 5.625)
+      const W = 10, H = 5.625
+      const BAND_H  = 0.55   // titre bandeau ≈ 1.4cm
+      const FOOT_H  = 0.27
+      const FOOT_Y  = H - FOOT_H
+      const BODY_Y  = BAND_H + 0.2
+      const BODY_H  = FOOT_Y - BODY_Y - 0.05
+
+      // Strip emojis (crash / mojibake in some PPT viewers)
+      const clean = s => String(s || '')
+        .replace(/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFF}]|\u{200D}/gu, '')
+        .replace(/\s{2,}/g, ' ').trim()
+
+      // ── Shared helpers ──────────────────────────────────────────────────────
+      const band = (sl, title) => {
+        sl.addShape(prs.ShapeType.rect, {
+          x: 0, y: 0, w: W, h: BAND_H,
+          fill: { color: C.primary }, line: { color: C.primary },
+        })
+        sl.addText(clean(title), {
+          x: 0.3, y: 0, w: W - 0.6, h: BAND_H,
+          fontSize: 16, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle',
+        })
+      }
+
+      const footer = (sl, idx) => {
+        sl.addText(clean(pptForm.titre), {
+          x: 0.25, y: FOOT_Y + 0.03, w: 7.5, h: FOOT_H - 0.04,
+          fontSize: 7, color: C.gray, fontFace: 'Calibri', italic: true, valign: 'middle',
+        })
+        sl.addText(String(idx + 1), {
+          x: 9.1, y: FOOT_Y + 0.03, w: 0.65, h: FOOT_H - 0.04,
+          fontSize: 8, color: C.gray, fontFace: 'Calibri', align: 'right', valign: 'middle',
+        })
+      }
+
+      // ── Slides ──────────────────────────────────────────────────────────────
+      for (let si = 0; si < pptResult.slides.length; si++) {
+        const slide = pptResult.slides[si]
         const sl = prs.addSlide()
 
-        // ── TITRE ──────────────────────────────────────────────────────
+        // ── TITRE ─────────────────────────────────────────────────────────────
         if (slide.type === 'titre') {
-          sl.background = { fill: C.primary }
-          sl.addShape(prs.ShapeType.rect, { x: 0, y: H - 0.6, w: W, h: 0.6, fill: { color: C.accent }, line: { color: C.accent } })
-          if (pptForm.chapitre) {
-            sl.addText(`Chapitre ${pptForm.chapitre}`, { x: 0.5, y: 0.65, w: W - 1, h: 0.5, fontSize: 20, color: C.amber, align: 'center', fontFace: 'Calibri' })
-          }
-          sl.addText(slide.titre || pptForm.titre, {
-            x: 0.8, y: 1.4, w: W - 1.6, h: 2.3,
-            fontSize: 32, color: C.white, bold: true, align: 'center', fontFace: 'Georgia', valign: 'middle', wrap: true,
-          })
-          const subtitle = [pptForm.niveau, pptMatiere?.nom].filter(Boolean).join(' · ')
-          if (subtitle) sl.addText(subtitle, { x: 0.8, y: 3.8, w: W - 1.6, h: 0.5, fontSize: 16, color: C.white, align: 'center', fontFace: 'Calibri' })
-          if (pptForm.option) sl.addText(pptForm.option, { x: 0.8, y: 4.2, w: W - 1.6, h: 0.38, fontSize: 13, color: C.white, align: 'center', fontFace: 'Calibri', italic: true })
+          // Faux dégradé : primary (haut 62%) + light (bas 38%)
+          sl.addShape(prs.ShapeType.rect, { x: 0, y: 0,        w: W, h: H * 0.62, fill: { color: C.primary }, line: { color: C.primary } })
+          sl.addShape(prs.ShapeType.rect, { x: 0, y: H * 0.6,  w: W, h: H * 0.42, fill: { color: C.light },   line: { color: C.light } })
 
-        // ── VOCABULAIRE ────────────────────────────────────────────────
+          // Badge chapitre (amber, haut-gauche)
+          if (pptForm.chapitre) {
+            sl.addShape(prs.ShapeType.rect, { x: 0.32, y: 0.28, w: 1.6, h: 0.4, fill: { color: C.amber }, line: { color: C.amber } })
+            sl.addText(`Ch. ${pptForm.chapitre}`, {
+              x: 0.32, y: 0.28, w: 1.6, h: 0.4,
+              fontSize: 13, color: C.white, bold: true, fontFace: 'Calibri', align: 'center', valign: 'middle',
+            })
+          }
+
+          // Titre principal
+          sl.addText(clean(slide.titre || pptForm.titre), {
+            x: 0.8, y: 1.3, w: W - 1.6, h: 2.4,
+            fontSize: 32, color: C.white, bold: true, align: 'center',
+            fontFace: 'Georgia', valign: 'middle', wrap: true,
+          })
+
+          // Sous-titre niveau · matière
+          const subtitle = [pptForm.niveau, pptMatiere?.nom].filter(Boolean).join('  ·  ')
+          if (subtitle) {
+            sl.addText(subtitle, {
+              x: 0.8, y: 3.85, w: W - 1.6, h: 0.44,
+              fontSize: 14, color: C.white, align: 'center', fontFace: 'Calibri',
+            })
+          }
+          // Option / filière
+          if (pptForm.option) {
+            sl.addText(clean(pptForm.option), {
+              x: 0.8, y: 4.22, w: W - 1.6, h: 0.34,
+              fontSize: 12, color: C.white, align: 'center', fontFace: 'Calibri', italic: true,
+            })
+          }
+          // Initiales MCCV bas-droite
+          sl.addText('MCCV', {
+            x: 8.75, y: 5.2, w: 0.98, h: 0.28,
+            fontSize: 9, color: C.white, align: 'right', fontFace: 'Calibri', italic: true,
+          })
+
+        // ── VOCABULAIRE ────────────────────────────────────────────────────────
         } else if (slide.type === 'vocabulaire') {
           sl.background = { fill: C.dark }
-          sl.addText('Vocabulaire clé', { x: 0.5, y: 0.1, w: W - 1, h: 0.6, fontSize: 22, color: C.white, bold: true, align: 'center', fontFace: 'Georgia' })
-          sl.addShape(prs.ShapeType.rect, { x: 3.5, y: 0.68, w: 3, h: 0.06, fill: { color: C.accent }, line: { color: C.accent } })
 
-          // Collect term/definition pairs
-          const termPairs = []
+          // Titre
+          sl.addText('Vocabulaire cle', {
+            x: 0.4, y: 0.1, w: W - 0.8, h: 0.55,
+            fontSize: 22, color: C.white, bold: true, align: 'center', fontFace: 'Georgia',
+          })
+          // Soulignement accent
+          sl.addShape(prs.ShapeType.rect, { x: 3.2, y: 0.63, w: 3.6, h: 0.06, fill: { color: C.accent }, line: { color: C.accent } })
+
+          // Collecte les paires terme / définition
+          const pairs = []
           for (const item of (slide.contenu || [])) {
-            const val = String(item.valeur || '')
-            const parse = line => {
-              const p = line.replace(/^[-•*]\s*/, '').split(':')
-              return { terme: p[0]?.trim() || line.trim(), def: p.slice(1).join(':').trim() }
+            const v = clean(item.valeur || '')
+            const parsePair = line => {
+              const s = line.replace(/^[-•*■\s]+/, '').trim()
+              const colon = s.indexOf(':')
+              if (colon > 0 && colon < 35) return { terme: s.slice(0, colon).trim(), def: s.slice(colon + 1).trim() }
+              return { terme: s, def: '' }
             }
-            if (item.type === 'liste') {
-              val.split('\n').filter(l => l.trim()).forEach(l => termPairs.push(parse(l)))
-            } else {
-              termPairs.push(parse(val))
-            }
-            if (termPairs.length >= 6) break
+            if (item.type === 'liste') v.split('\n').filter(l => l.trim()).forEach(l => pairs.push(parsePair(l)))
+            else pairs.push(parsePair(v))
+            if (pairs.length >= 6) break
           }
 
-          const COLS = 3, cardW = 2.9, cardH = 1.9, gX = 0.25, gY = 0.18
-          for (let i = 0; i < Math.min(termPairs.length, 6); i++) {
+          // Grille 3 × 2
+          const COLS = 3, cW = 2.9, cH = 1.88, gX = 0.24, gY = 0.18
+          const startX = (W - (COLS * cW + (COLS - 1) * gX)) / 2
+          for (let i = 0; i < Math.min(pairs.length, 6); i++) {
             const col = i % COLS, row = Math.floor(i / COLS)
-            const cx = 0.45 + col * (cardW + gX), cy = 0.88 + row * (cardH + gY)
-            const { terme, def } = termPairs[i]
-            sl.addShape(prs.ShapeType.rect, { x: cx, y: cy, w: cardW, h: cardH, fill: { color: '0d0d23' }, line: { color: C.primary, pt: 1.5 } })
-            sl.addText(terme, { x: cx + 0.12, y: cy + 0.1, w: cardW - 0.24, h: 0.48, fontSize: 13, color: C.amber, bold: true, fontFace: 'Calibri', wrap: true })
-            sl.addShape(prs.ShapeType.rect, { x: cx + 0.12, y: cy + 0.58, w: cardW - 0.24, h: 0.03, fill: { color: C.primary }, line: { color: C.primary } })
-            if (def) sl.addText(def, { x: cx + 0.12, y: cy + 0.66, w: cardW - 0.24, h: cardH - 0.8, fontSize: 10.5, color: 'D1D5DB', fontFace: 'Calibri', wrap: true })
+            const cx = startX + col * (cW + gX), cy = 0.84 + row * (cH + gY)
+            const { terme, def } = pairs[i]
+            // Fond de carte
+            sl.addShape(prs.ShapeType.rect, { x: cx, y: cy, w: cW, h: cH, fill: { color: C.darkCard }, line: { color: C.darkCard } })
+            // Bordure top accent 3pt
+            sl.addShape(prs.ShapeType.rect, { x: cx, y: cy, w: cW, h: 0.065, fill: { color: C.accent }, line: { color: C.accent } })
+            // Terme
+            sl.addText(terme, {
+              x: cx + 0.12, y: cy + 0.12, w: cW - 0.24, h: 0.46,
+              fontSize: 14, color: C.amber, bold: true, fontFace: 'Calibri', wrap: true,
+            })
+            // Définition
+            if (def) {
+              sl.addText(def, {
+                x: cx + 0.12, y: cy + 0.63, w: cW - 0.24, h: cH - 0.75,
+                fontSize: 10, color: C.white, fontFace: 'Calibri', wrap: true,
+              })
+            }
           }
+          footer(sl, si)
 
-        // ── PLAN ───────────────────────────────────────────────────────
+        // ── PLAN ──────────────────────────────────────────────────────────────
         } else if (slide.type === 'plan') {
           sl.background = { fill: 'FFFFFF' }
-          sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: W, h: BAND_H, fill: { color: C.primary }, line: { color: C.primary } })
-          sl.addText(slide.titre || 'Plan du cours', { x: 0.4, y: 0.05, w: W - 0.8, h: BAND_H - 0.1, fontSize: 22, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle' })
-          let iy = BAND_H + 0.3
-          for (const item of (slide.contenu || [])) {
-            if (iy > H - 0.4) break
-            const val = String(item.valeur || '').replace(/^[-•*\d.)\s]+/, '')
-            sl.addShape(prs.ShapeType.rect, { x: 0.5, y: iy + 0.08, w: 0.07, h: 0.44, fill: { color: C.accent }, line: { color: C.accent } })
-            sl.addText(val, { x: 0.72, y: iy, w: W - 1.2, h: 0.58, fontSize: 14, color: C.text, fontFace: 'Calibri', valign: 'middle' })
-            iy += 0.68
-          }
+          band(sl, 'Plan du cours')
 
-        // ── SYNTHÈSE ───────────────────────────────────────────────────
+          const items = (slide.contenu || []).map(item =>
+            clean(item.valeur || '').replace(/^[-•*■\d.)\s]+/, '').trim()
+          ).filter(Boolean)
+
+          const USE2COL = items.length > 4
+          const colW = USE2COL ? 4.35 : 8.8
+          const gap  = 0.68
+
+          for (let i = 0; i < items.length; i++) {
+            const col = USE2COL ? i % 2 : 0
+            const row = USE2COL ? Math.floor(i / 2) : i
+            const cx  = USE2COL ? (col === 0 ? 0.35 : 5.3) : 0.35
+            const cy  = BODY_Y + 0.08 + row * gap
+            if (cy + 0.55 > FOOT_Y) break
+
+            // Cercle numéroté
+            sl.addShape(prs.ShapeType.ellipse, {
+              x: cx, y: cy + 0.06, w: 0.42, h: 0.42,
+              fill: { color: C.primary }, line: { color: C.primary },
+            })
+            sl.addText(String(i + 1), {
+              x: cx, y: cy + 0.06, w: 0.42, h: 0.42,
+              fontSize: 11, color: C.white, bold: true, fontFace: 'Calibri', align: 'center', valign: 'middle',
+            })
+            // Carte fond pale
+            sl.addShape(prs.ShapeType.rect, {
+              x: cx + 0.52, y: cy, w: colW - 0.62, h: 0.54,
+              fill: { color: C.pale }, line: { color: C.pale },
+            })
+            // Bordure gauche accent
+            sl.addShape(prs.ShapeType.rect, {
+              x: cx + 0.52, y: cy, w: 0.07, h: 0.54,
+              fill: { color: C.accent }, line: { color: C.accent },
+            })
+            // Texte
+            sl.addText(items[i], {
+              x: cx + 0.7, y: cy, w: colW - 0.82, h: 0.54,
+              fontSize: 13, color: C.text, fontFace: 'Calibri', valign: 'middle',
+            })
+          }
+          footer(sl, si)
+
+        // ── SYNTHESE ──────────────────────────────────────────────────────────
         } else if (slide.type === 'synthese') {
           sl.background = { fill: 'FFFFFF' }
-          sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: W, h: BAND_H, fill: { color: C.primary }, line: { color: C.primary } })
-          sl.addText(slide.titre || 'Synthèse', { x: 0.4, y: 0.05, w: W - 0.8, h: BAND_H - 0.1, fontSize: 22, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle' })
-          let cy = BAND_H + 0.2
+          band(sl, 'Synthese')
+
+          let cy = BODY_Y
           for (const item of (slide.contenu || [])) {
-            if (cy > H - 0.4) break
-            const val = String(item.valeur || '')
-            if (item.type === 'encart' || val.toLowerCase().startsWith('à retenir')) {
-              sl.addShape(prs.ShapeType.rect, { x: 0.5, y: cy, w: W - 1, h: 0.72, fill: { color: C.accent }, line: { color: C.accent } })
-              sl.addText('💡 ' + val.replace(/^à retenir\s*:?\s*/i, ''), { x: 0.65, y: cy + 0.06, w: W - 1.3, h: 0.6, fontSize: 12, color: C.white, bold: true, fontFace: 'Calibri', valign: 'middle', wrap: true })
-              cy += 0.86
+            if (cy > FOOT_Y - 0.3) break
+            const val = clean(item.valeur || '')
+            const isRetenir = item.type === 'encart' || /retenir/i.test(val)
+
+            if (isRetenir) {
+              const eh = 0.68
+              sl.addShape(prs.ShapeType.rect, { x: 0.4, y: cy, w: W - 0.8, h: eh, fill: { color: C.accent }, line: { color: C.accent } })
+              sl.addText('A retenir : ' + val.replace(/^a\s*retenir\s*:?\s*/i, ''), {
+                x: 0.56, y: cy + 0.05, w: W - 1.1, h: eh - 0.1,
+                fontSize: 12, color: C.white, bold: true, fontFace: 'Calibri', valign: 'middle', wrap: true,
+              })
+              cy += eh + 0.14
             } else if (item.type === 'tableau') {
               const tRows = buildTableRows(val, C)
               if (tRows.length > 0) {
-                const th = Math.min(tRows.length * 0.42, H - cy - 0.2)
-                sl.addTable(tRows, { x: 0.5, y: cy, w: W - 1, h: th, border: { color: 'E5E7EB', type: 'solid', pt: 1 } })
-                cy += th + 0.15
+                const th = Math.min(tRows.length * 0.42, FOOT_Y - cy - 0.15)
+                sl.addTable(tRows, { x: 0.4, y: cy, w: W - 0.8, h: th, border: { color: 'E5E7EB', type: 'solid', pt: 1 } })
+                cy += th + 0.14
               }
             } else {
-              sl.addText(val, { x: 0.5, y: cy, w: W - 1, h: 0.5, fontSize: 13, color: C.text, fontFace: 'Calibri', wrap: true })
-              cy += 0.58
+              sl.addText(val, { x: 0.4, y: cy, w: W - 0.8, h: 0.48, fontSize: 13, color: C.text, fontFace: 'Calibri', wrap: true })
+              cy += 0.54
             }
           }
+          footer(sl, si)
 
-        // ── CONTENU générique (contenu + remediation) ──────────────────
+        // ── CONTENU / REMEDIATION ─────────────────────────────────────────────
         } else {
           sl.background = { fill: 'FFFFFF' }
-          sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: W, h: BAND_H, fill: { color: C.primary }, line: { color: C.primary } })
-          sl.addText(slide.titre || '', { x: 0.4, y: 0.05, w: W - 0.8, h: BAND_H - 0.1, fontSize: 22, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle' })
-          let cy = BAND_H + 0.2
+          band(sl, clean(slide.titre || ''))
+
+          let cy = BODY_Y
           for (const item of (slide.contenu || [])) {
-            if (cy > H - 0.35) break
-            const val = String(item.valeur || '')
+            if (cy > FOOT_Y - 0.3) break
+            const val = clean(item.valeur || '')
+
             if (item.type === 'liste') {
               const lines = val.split('\n').filter(l => l.trim())
-              const bullets = lines.map(l => ({ text: l.replace(/^[-•*]\s*/, ''), options: { bullet: { color: C.accent }, fontSize: 13, color: C.text, fontFace: 'Calibri' } }))
-              const bh = Math.min(lines.length * 0.44, H - cy - 0.2)
-              sl.addText(bullets, { x: 0.5, y: cy, w: W - 1, h: bh, fontFace: 'Calibri' })
+              // Puces ■ en accent, texte en dark — runs multi-couleurs
+              const runs = []
+              lines.forEach((l, li) => {
+                const text = l.replace(/^[-•*■\s]+/, '')
+                runs.push({ text: '\u25A0 ', options: { color: C.accent, fontSize: 13, fontFace: 'Calibri' } })
+                runs.push({ text, options: { color: C.text, fontSize: 13, fontFace: 'Calibri', breakLine: li < lines.length - 1 } })
+              })
+              const bh = Math.min(lines.length * 0.47, FOOT_Y - cy - 0.15)
+              sl.addText(runs, { x: 0.55, y: cy, w: W - 0.9, h: bh, fontFace: 'Calibri', paraSpaceAfter: 8 })
               cy += bh + 0.1
+
             } else if (item.type === 'tableau') {
               const tRows = buildTableRows(val, C)
               if (tRows.length > 0) {
-                const th = Math.min(tRows.length * 0.42, H - cy - 0.2)
-                sl.addTable(tRows, { x: 0.5, y: cy, w: W - 1, h: th, border: { color: 'E5E7EB', type: 'solid', pt: 1 } })
-                cy += th + 0.15
+                const th = Math.min(tRows.length * 0.42, FOOT_Y - cy - 0.15)
+                sl.addTable(tRows, { x: 0.4, y: cy, w: W - 0.8, h: th, border: { color: 'E5E7EB', type: 'solid', pt: 1 } })
+                cy += th + 0.14
               }
+
             } else if (item.type === 'encart') {
-              sl.addShape(prs.ShapeType.rect, { x: 0.5, y: cy, w: W - 1, h: 0.72, fill: { color: C.pale }, line: { color: C.accent, pt: 2 } })
-              sl.addText(val, { x: 0.65, y: cy + 0.06, w: W - 1.3, h: 0.6, fontSize: 12, color: C.text, fontFace: 'Calibri', valign: 'middle', wrap: true })
-              cy += 0.86
+              // Label "Exemple concret" amber au-dessus
+              sl.addText('Exemple concret', {
+                x: 0.4, y: cy, w: 3.5, h: 0.3,
+                fontSize: 10, color: C.amber, bold: true, fontFace: 'Calibri',
+              })
+              cy += 0.3
+              const eh = Math.min(0.72, FOOT_Y - cy - 0.1)
+              // Fond pale
+              sl.addShape(prs.ShapeType.rect, { x: 0.4, y: cy, w: W - 0.8, h: eh, fill: { color: C.pale }, line: { color: C.pale } })
+              // Bordure gauche accent 4pt
+              sl.addShape(prs.ShapeType.rect, { x: 0.4, y: cy, w: 0.075, h: eh, fill: { color: C.accent }, line: { color: C.accent } })
+              sl.addText(val, {
+                x: 0.58, y: cy + 0.05, w: W - 1.1, h: eh - 0.1,
+                fontSize: 11, color: C.text, fontFace: 'Calibri', italic: true, valign: 'middle', wrap: true,
+              })
+              cy += eh + 0.14
+
             } else {
-              sl.addText(val, { x: 0.5, y: cy, w: W - 1, h: 0.5, fontSize: 13, color: C.text, fontFace: 'Calibri', wrap: true })
-              cy += 0.58
+              // texte / titre / terme / default
+              sl.addText(val, { x: 0.4, y: cy, w: W - 0.8, h: 0.5, fontSize: 13, color: C.text, fontFace: 'Calibri', wrap: true })
+              cy += 0.56
             }
           }
+          footer(sl, si)
         }
       }
 
-      const parts = [
+      const fileParts = [
         pptForm.chapitre?.replace(/[^a-zA-Z0-9]/g, '_'),
         (pptForm.titre || 'Presentation').replace(/\s+/g, '_').slice(0, 25),
         pptForm.niveau?.replace(/\s+/g, '_').slice(0, 15),
       ].filter(Boolean)
-      await prs.writeFile({ fileName: parts.join('_') + '.pptx' })
-      toast.success('Fichier PowerPoint téléchargé !')
+      await prs.writeFile({ fileName: fileParts.join('_') + '.pptx' })
+      toast.success('Fichier PowerPoint telecharge !')
     } catch (err) {
       console.error('PPT generation error:', err)
-      toast.error('Erreur lors de la création du fichier PowerPoint.')
+      toast.error('Erreur lors de la creation du fichier PowerPoint.')
     } finally {
       setPptGenerating(false)
     }
   }
 
-  // Helpers PPT — parse texte tabulaire "Col1|Col2\nVal1|Val2" → pptxgenjs rows
+  // Helper : parse "Col1|Col2\nVal1|Val2" → pptxgenjs table rows
   function buildTableRows(val, C) {
-    return val.split('\n').filter(r => r.trim())
+    return String(val).split('\n').filter(r => r.trim())
       .map((r, ri) => r.split('|').filter(c => c.trim()).map(cell => ({
         text: cell.trim(),
         options: ri === 0
