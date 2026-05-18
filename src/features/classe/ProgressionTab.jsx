@@ -1,9 +1,9 @@
-import { useMemo } from 'react'
-import { Printer } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Printer, Star } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { formatDate, parseISO, isInVacances, toISODate } from '../../utils/dateUtils'
-import { eachWeekOfInterval, startOfWeek, endOfWeek, isBefore, isAfter, isSameDay } from 'date-fns'
+import { eachWeekOfInterval, startOfWeek, endOfWeek, isBefore, isAfter, isSameDay, addDays, differenceInWeeks } from 'date-fns'
 
 // ── Donut SVG ─────────────────────────────────────────────────────────────────
 function DonutChart({ faites, retard, aFaire, total }) {
@@ -35,7 +35,7 @@ function DonutChart({ faites, retard, aFaire, total }) {
   ]
 
   let angle = 0
-  const GAP = 2 // degrees gap between segments
+  const GAP = 2
   const paths = segments.map((seg, i) => {
     if (seg.value === 0) return null
     const span = (seg.value / total) * 360
@@ -58,7 +58,6 @@ function DonutChart({ faites, retard, aFaire, total }) {
 
   return (
     <svg width={112} height={112} viewBox="0 0 112 112">
-      {/* Track */}
       <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeWidth={strokeW}
         className="text-gray-100 dark:text-gray-700" />
       {paths}
@@ -92,10 +91,40 @@ function StatCard({ label, value, sub, color }) {
   )
 }
 
+// ── Gantt Tooltip ─────────────────────────────────────────────────────────────
+function GanttTooltip({ seances, seqTitre }) {
+  if (!seances || seances.length === 0) return null
+  return (
+    <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 pointer-events-none"
+      style={{ minWidth: 180 }}>
+      <div className="bg-gray-900 text-white text-xs rounded-lg shadow-xl p-3 space-y-1.5">
+        {seances.map(sc => (
+          <div key={sc.id}>
+            <p className="font-semibold">{sc.titre || seqTitre}</p>
+            <p className="text-gray-400">{formatDate(sc.date)} · {sc.heureDebut}–{sc.heureFin}</p>
+            {sc.etoiles > 0 && (
+              <div className="flex gap-0.5 mt-0.5">
+                {[1, 2, 3].map(n => (
+                  <Star key={n} size={10} className={n <= sc.etoiles ? 'text-yellow-400 fill-yellow-400' : 'text-gray-600'} />
+                ))}
+              </div>
+            )}
+            {sc.noteCours && (
+              <p className="text-gray-300 italic mt-0.5 line-clamp-2">"{sc.noteCours}"</p>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function ProgressionTab({ classe, anneeId }) {
-  const { seancesCalendrier, rubanPedagogique, vacances, ccf, anneesScolaires, getParams } = useData()
+  const { seancesCalendrier, rubanPedagogique, vacances, ccf, anneesScolaires, emploiDuTemps, getParams } = useData()
   const { getCurrentUser } = useAuth()
+  const [tooltipInfo, setTooltipInfo] = useState(null) // { seances, seqTitre, key }
 
   const user = getCurrentUser()
   const params = getParams()
@@ -179,7 +208,7 @@ export default function ProgressionTab({ classe, anneeId }) {
     })
 
     return { weeks, seqRows, todayWeekIdx }
-  }, [anneeActive?.id, allSeances.length, totalRubanSeances])
+  }, [anneeActive?.id, allSeances.length, totalRubanSeances]) // eslint-disable-line
 
   const { weeks, seqRows, todayWeekIdx } = ganttData
   const BLOCK_W = 28
@@ -210,6 +239,103 @@ export default function ProgressionTab({ classe, anneeId }) {
 
   const enseignantLabel = params?.enseignant || user?.nom || ''
   const etablissementLabel = params?.etablissement || ''
+
+  // ── Planning prévisionnel (Part 7) ───────────────────────────────────────
+  const planningData = useMemo(() => {
+    if (!anneeActive || sequences.length === 0) return null
+
+    const today = new Date()
+    const juin30 = new Date(parseInt(anneeActive.label?.split('-')?.[1] || '2026'), 5, 30)
+    const fin = isBefore(parseISO(anneeActive.dateFin), juin30) ? parseISO(anneeActive.dateFin) : juin30
+
+    // Compter les créneaux disponibles pour cette classe jusqu'au 30 juin
+    const periodes = emploiDuTemps(anneeId)
+    const JOUR_MAP = { lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5, samedi: 6, dimanche: 0 }
+
+    let creneauxRestants = 0
+    for (const periode of periodes) {
+      const creneaux = (periode.creneaux || []).filter(c => c.classeId === classe.id)
+      if (creneaux.length === 0) continue
+      let current = parseISO(periode.dateDebut)
+      const periodeFin = parseISO(periode.dateFin)
+      while (current.getTime() <= Math.min(periodeFin.getTime(), fin.getTime())) {
+        if (!isBefore(current, today) && !isInVacances(current, vacancesList)) {
+          const dayOfWeek = current.getDay()
+          if (creneaux.some(cr => JOUR_MAP[cr.jour] === dayOfWeek)) {
+            creneauxRestants++
+          }
+        }
+        current = addDays(current, 1)
+      }
+    }
+
+    // Séances restantes à faire
+    const seancesNonFaites = total - done
+    const deficit = seancesNonFaites - creneauxRestants
+
+    // Semaines restantes jusqu'au 30 juin
+    const semainesRestantes = Math.max(0, differenceInWeeks(fin, today))
+
+    // Prochaines vacances
+    const prochainesVacances = vacancesList
+      .filter(v => isBefore(today, parseISO(v.dateDebut)))
+      .sort((a, b) => a.dateDebut.localeCompare(b.dateDebut))[0] || null
+
+    let creneauxAvantVac = 0
+    if (prochainesVacances) {
+      const finVac = parseISO(prochainesVacances.dateDebut)
+      for (const periode of periodes) {
+        const creneaux = (periode.creneaux || []).filter(c => c.classeId === classe.id)
+        if (creneaux.length === 0) continue
+        let current = parseISO(periode.dateDebut)
+        const periodeFin = parseISO(periode.dateFin)
+        while (current.getTime() <= Math.min(periodeFin.getTime(), finVac.getTime())) {
+          if (!isBefore(current, today) && !isInVacances(current, vacancesList)) {
+            const dayOfWeek = current.getDay()
+            if (creneaux.some(cr => JOUR_MAP[cr.jour] === dayOfWeek)) {
+              creneauxAvantVac++
+            }
+          }
+          current = addDays(current, 1)
+        }
+      }
+    }
+
+    // Tableau par séquence
+    const seqDetails = sequences.map(seq => {
+      const seanceIds = (seq.seances || []).map(s => s.id)
+      const seancesDeployees = allSeances
+        .filter(sc => seanceIds.includes(sc.seanceRubanId))
+        .sort((a, b) => a.date.localeCompare(b.date))
+      const seqDone = seancesDeployees.filter(s => s.statut === 'faite').length
+      const seqTotal = seq.seances?.length || 0
+      const premiere = seancesDeployees[0] || null
+      const derniere = seancesDeployees[seancesDeployees.length - 1] || null
+
+      let statut = '⏳ À venir'
+      if (seqDone === seqTotal && seqTotal > 0) statut = '✅ Terminée'
+      else if (seqDone > 0 || seancesDeployees.length > 0) statut = '🔄 En cours'
+
+      return {
+        titre: seq.titre,
+        fait: seqDone,
+        total: seqTotal,
+        dateDebut: premiere?.date || null,
+        dateFin: derniere?.date || null,
+        statut,
+      }
+    })
+
+    return {
+      seancesNonFaites,
+      creneauxRestants,
+      deficit,
+      semainesRestantes,
+      prochainesVacances,
+      creneauxAvantVac,
+      seqDetails,
+    }
+  }, [anneeActive?.id, allSeances.length, totalRubanSeances, vacancesList.length]) // eslint-disable-line
 
   return (
     <div className="space-y-6">
@@ -326,7 +452,7 @@ export default function ProgressionTab({ classe, anneeId }) {
 
               {/* Body avec vacances + today ligne */}
               <div className="relative">
-                {/* Fond vacances (absolu, all rows) */}
+                {/* Fond vacances */}
                 {weeks.map((week, i) => isVacWeek(week) && (
                   <div key={`vac-${i}`} style={{
                     position: 'absolute',
@@ -358,11 +484,19 @@ export default function ProgressionTab({ classe, anneeId }) {
                     <div className="flex relative" style={{ zIndex: 2 }}>
                       {weeks.map((week, i) => {
                         const seancesInWeek = weekSeances[i] || []
+                        const hasNote = seancesInWeek.some(sc => sc.noteCours)
+                        const hasEtoiles = seancesInWeek.some(sc => sc.etoiles > 0)
+                        const tooltipKey = `${seq.id}-${i}`
                         return (
                           <div
                             key={i}
-                            style={{ width: BLOCK_W, height: ROW_H, display: 'flex', alignItems: 'center', padding: '2px 1px', gap: 1 }}
+                            style={{ width: BLOCK_W, height: ROW_H, display: 'flex', alignItems: 'center', padding: '2px 1px', gap: 1, position: 'relative' }}
+                            onMouseEnter={() => seancesInWeek.length > 0 && setTooltipInfo({ seances: seancesInWeek, seqTitre: seq.titre, key: tooltipKey })}
+                            onMouseLeave={() => setTooltipInfo(null)}
                           >
+                            {tooltipInfo?.key === tooltipKey && (
+                              <GanttTooltip seances={tooltipInfo.seances} seqTitre={tooltipInfo.seqTitre} />
+                            )}
                             {seancesInWeek.length > 0 && seancesInWeek.map(sc => {
                               const statut = getSeanceStatut(sc)
                               return (
@@ -375,9 +509,21 @@ export default function ProgressionTab({ classe, anneeId }) {
                                     borderRadius: 3,
                                     cursor: 'default',
                                     minWidth: 4,
+                                    position: 'relative',
                                   }}
-                                  title={`${sc.titre || seq.titre} — ${formatDate(sc.date)}`}
-                                />
+                                >
+                                  {(hasNote || hasEtoiles) && (
+                                    <div style={{
+                                      position: 'absolute',
+                                      top: -3,
+                                      right: -2,
+                                      width: 5,
+                                      height: 5,
+                                      borderRadius: '50%',
+                                      backgroundColor: '#fbbf24',
+                                    }} />
+                                  )}
+                                </div>
                               )
                             })}
                           </div>
@@ -389,10 +535,102 @@ export default function ProgressionTab({ classe, anneeId }) {
               </div>
             </div>
           </div>
+          <p className="text-xs text-gray-400 mt-2 no-print">Survolez un bloc pour voir le détail de la séance</p>
         </div>
       ) : (
         <div className="card p-8 text-center text-gray-400">
           Déployez le ruban pédagogique pour voir la frise de progression.
+        </div>
+      )}
+
+      {/* ── Planning prévisionnel ── */}
+      {planningData && (
+        <div className="card p-5 space-y-5 no-print">
+          <h3 className="font-semibold text-gray-800 dark:text-gray-100">📅 Planning prévisionnel</h3>
+
+          {/* Récap rapide */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4">
+              <p className="text-xs text-gray-400 mb-1">Séances restantes</p>
+              <p className="text-2xl font-bold text-gray-700 dark:text-gray-200">{planningData.seancesNonFaites}</p>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4">
+              <p className="text-xs text-gray-400 mb-1">Créneaux dispo. avant le 30/06</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{planningData.creneauxRestants}</p>
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-4">
+              <p className="text-xs text-gray-400 mb-1">Semaines restantes</p>
+              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{planningData.semainesRestantes}</p>
+            </div>
+          </div>
+
+          {/* Prochaines vacances */}
+          {planningData.prochainesVacances && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm flex items-center gap-3">
+              <span className="text-blue-600 dark:text-blue-300 font-medium">
+                Prochaines vacances : {planningData.prochainesVacances.nom}
+              </span>
+              <span className="text-gray-500">à partir du {formatDate(planningData.prochainesVacances.dateDebut)}</span>
+              <span className="text-gray-500">·</span>
+              <span className="text-gray-600 dark:text-gray-300">
+                {planningData.creneauxAvantVac} créneaux disponibles d'ici là
+              </span>
+            </div>
+          )}
+
+          {/* Alerte déficit */}
+          {planningData.deficit > 0 && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+              <p className="text-red-700 dark:text-red-300 font-semibold text-sm">
+                ⚠️ Attention : {planningData.deficit} séance{planningData.deficit > 1 ? 's' : ''} ne pourront pas être placées avant le 30 juin avec l'emploi du temps actuel.
+              </p>
+              <p className="text-red-600 dark:text-red-400 text-xs mt-1">
+                Suggestion : réduisez de {planningData.deficit} séance{planningData.deficit > 1 ? 's' : ''} ou ajoutez {planningData.deficit} créneau{planningData.deficit > 1 ? 'x' : ''} à l'emploi du temps.
+              </p>
+            </div>
+          )}
+          {planningData.creneauxRestants > 0 && planningData.deficit <= 0 && planningData.seancesNonFaites > 0 && (
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm text-green-700 dark:text-green-300">
+              ✅ Le programme peut être terminé avant le 30 juin ({planningData.creneauxRestants - planningData.seancesNonFaites} créneaux en réserve).
+            </div>
+          )}
+
+          {/* Tableau récapitulatif par séquence */}
+          {planningData.seqDetails.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Récapitulatif par séquence</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 dark:bg-gray-700/40">
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium rounded-l">Séquence</th>
+                      <th className="text-center px-3 py-2 text-gray-500 font-medium">Faites</th>
+                      <th className="text-center px-3 py-2 text-gray-500 font-medium hidden md:table-cell">Début</th>
+                      <th className="text-center px-3 py-2 text-gray-500 font-medium hidden md:table-cell">Fin prév.</th>
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium rounded-r">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                    {planningData.seqDetails.map((seq, i) => (
+                      <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                        <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-100 max-w-48 truncate">{seq.titre}</td>
+                        <td className="px-3 py-2 text-center text-gray-600 dark:text-gray-300">
+                          {seq.fait}/{seq.total}
+                        </td>
+                        <td className="px-3 py-2 text-center text-gray-500 hidden md:table-cell">
+                          {seq.dateDebut ? formatDate(seq.dateDebut) : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-center text-gray-500 hidden md:table-cell">
+                          {seq.dateFin ? formatDate(seq.dateFin) : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{seq.statut}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

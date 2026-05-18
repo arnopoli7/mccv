@@ -6,7 +6,7 @@ import jeanMarcPhoto from '../assets/jeanmarc.webp'
 import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, ChevronRight, Printer, CalendarPlus,
-  AlertCircle, AlertTriangle, CheckCircle, CalendarDays,
+  AlertCircle, AlertTriangle, CheckCircle, CalendarDays, Star,
 } from 'lucide-react'
 import { useData } from '../contexts/DataContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -18,10 +18,53 @@ import {
 import { format, differenceInDays } from 'date-fns'
 import NouvelleAnneeWizard from './NouvelleAnneeWizard'
 
+const TYPE_BADGE_COLORS = {
+  'Cours': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  'TD / Exercices': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  'Évaluation': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+}
+
+function TodaySeanceRow({ s, cl, onToggle }) {
+  const etoiles = s.etoiles || 0
+  const isFaite = s.statut === 'faite'
+  return (
+    <div className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isFaite ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800 opacity-75' : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700'}`}>
+      {cl && <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: cl.couleur }} />}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-mono shrink-0">
+            {s.heureDebut}→{s.heureFin}
+          </span>
+          {cl && <span className="text-xs font-semibold" style={{ color: cl.couleur }}>{cl.nom}</span>}
+          <span className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">{s.titre || 'Séance'}</span>
+          {s.type && (
+            <span className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${TYPE_BADGE_COLORS[s.type] || 'bg-gray-100 text-gray-600'}`}>
+              {s.type}
+            </span>
+          )}
+          {etoiles > 0 && (
+            <span className="flex gap-0.5 shrink-0">
+              {[1, 2, 3].map(n => (
+                <Star key={n} size={11} className={n <= etoiles ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'} />
+              ))}
+            </span>
+          )}
+        </div>
+      </div>
+      <button
+        onClick={onToggle}
+        className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isFaite ? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-orange-100 dark:hover:bg-orange-900/20 hover:text-orange-600' : 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/40'}`}
+      >
+        {isFaite ? '↩️ Remettre À faire' : '✅ Marquer comme faite'}
+      </button>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { getCurrentUser, isAdmin } = useAuth()
-  const { classes, seancesCalendrier, rubanPedagogique, vacances, stages, getAnneeActive, cleanOrphanCalendarEvents } = useData()
+  const { classes, seancesCalendrier, rubanPedagogique, vacances, stages, getAnneeActive, cleanOrphanCalendarEvents, update } = useData()
   const user = getCurrentUser()
   const [showWizard, setShowWizard] = useState(false)
 
@@ -348,6 +391,56 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* ── MA JOURNÉE ── */}
+      {(() => {
+        const todaySeances = getSeancesForDay(today)
+          .map(s => {
+            const cl = classList.find(c => c.id === s.classeId)
+            const rubanList = allRuban.filter(rb => rb.classeId === s.classeId)
+            const seanceRuban = rubanList
+              .flatMap(rb => (rb.sequences || []).flatMap(seq => seq.seances || []))
+              .find(rs => rs.id === s.seanceRubanId) || null
+            return { s, cl, seanceRuban }
+          })
+
+        function toggleTodayStatut(s) {
+          const newStatut = s.statut === 'faite' ? 'à faire' : 'faite'
+          update('seancesCalendrier', s.id, { statut: newStatut })
+        }
+
+        const allDone = todaySeances.length > 0 && todaySeances.every(({ s }) => s.statut === 'faite')
+
+        return (
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+              ☀️ Ma journée
+            </h3>
+            <div className="card p-4">
+              {todaySeances.length === 0 ? (
+                <p className="text-center text-gray-500 py-4">Pas de cours aujourd'hui 🎉 Profitez-en !</p>
+              ) : allDone ? (
+                <>
+                  <p className="text-center text-green-600 dark:text-green-400 font-medium py-2 mb-3">
+                    Tous vos cours du jour sont terminés ! 🎉
+                  </p>
+                  <div className="space-y-2">
+                    {todaySeances.map(({ s, cl }) => (
+                      <TodaySeanceRow key={s.id} s={s} cl={cl} onToggle={() => toggleTodayStatut(s)} />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  {todaySeances.map(({ s, cl }) => (
+                    <TodaySeanceRow key={s.id} s={s} cl={cl} onToggle={() => toggleTodayStatut(s)} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── CALENDRIER SEMAINE ── */}
       <div>

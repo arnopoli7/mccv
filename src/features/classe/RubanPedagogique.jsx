@@ -461,16 +461,28 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
   // ── Télécharger le modèle Excel
   function downloadTemplate() {
     // ── Feuille 1 : Ruban pédagogique
-    const headers = ['N° Séquence', 'Titre de la séquence', 'Titre de la séance', 'Type de séance (Cours / TD / Exercices / Évaluation)', 'Durée (heures)', 'Objectif de la séance']
+    const headers = [
+      'N° Séquence',
+      'Titre de la séquence',
+      'Objectifs pédagogiques',
+      'Compétences visées',
+      'Titre de la séance',
+      'Type de séance (Cours / TD / Exercices / Évaluation)',
+      'Durée (heures)',
+      'Objectif de la séance',
+    ]
     const examples = [
-      [1, 'Les magasins', 'Introduction aux commerces', 'Cours', 1, 'Identifier les commerces'],
-      [1, '', 'Étude de cas', 'TD / Exercices', 1.5, 'Analyser un cas réel'],
-      [1, '', 'Évaluation séquence 1', 'Évaluation', 1, 'Contrôler les acquis'],
+      [1, 'Les magasins', 'Connaître les types de commerces', 'C1 - Communication commerciale', 'Introduction aux commerces', 'Cours', 1, 'Identifier les commerces'],
+      [1, '', '', '', 'Étude de cas', 'TD / Exercices', 1.5, 'Analyser un cas réel'],
+      [1, '', '', '', 'Évaluation séquence 1', 'Évaluation', 1, 'Contrôler les acquis'],
     ]
     const ws1 = XLSX.utils.aoa_to_sheet([headers, ...examples])
 
     // Largeurs de colonnes
-    ws1['!cols'] = [{ wch: 14 }, { wch: 28 }, { wch: 32 }, { wch: 42 }, { wch: 16 }, { wch: 36 }]
+    ws1['!cols'] = [
+      { wch: 14 }, { wch: 28 }, { wch: 32 }, { wch: 28 },
+      { wch: 32 }, { wch: 42 }, { wch: 16 }, { wch: 36 },
+    ]
 
     // ── Feuille 2 : Instructions
     const instructions = [
@@ -479,10 +491,12 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       ['Colonne', 'Description'],
       ['A — N° Séquence', 'Numéro entier de la séquence (ex : 1, 2, 3…). Répéter le même numéro pour chaque séance de la séquence.'],
       ['B — Titre de la séquence', 'Renseigner uniquement sur la première ligne de la séquence. Laisser vide pour les lignes suivantes.'],
-      ['C — Titre de la séance', 'Titre de chaque séance. Obligatoire.'],
-      ['D — Type de séance', 'Valeur exacte parmi : Cours, TD / Exercices, Évaluation'],
-      ['E — Durée (heures)', 'Durée en heures (ex : 1, 1.5, 2). Utiliser le point comme séparateur décimal.'],
-      ['F — Objectif de la séance', 'Objectif pédagogique de la séance. Optionnel.'],
+      ['C — Objectifs pédagogiques', 'Objectifs pédagogiques de la séquence. Renseigner sur la première ligne de la séquence. Optionnel.'],
+      ['D — Compétences visées', 'Compétences visées par la séquence (ex: C1, C2…). Renseigner sur la première ligne. Optionnel.'],
+      ['E — Titre de la séance', 'Titre de chaque séance. Obligatoire.'],
+      ['F — Type de séance', 'Valeur exacte parmi : Cours, TD / Exercices, Évaluation'],
+      ['G — Durée (heures)', 'Durée en heures (ex : 1, 1.5, 2). Utiliser le point comme séparateur décimal.'],
+      ['H — Objectif de la séance', 'Objectif pédagogique de la séance. Optionnel.'],
       ['', ''],
       ['RÈGLES IMPORTANTES', ''],
       ['', 'Ne pas modifier les en-têtes de la feuille "Ruban pédagogique".'],
@@ -491,7 +505,7 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       ['', 'La ligne d\'en-tête est automatiquement détectée et ignorée à l\'import.'],
     ]
     const ws2 = XLSX.utils.aoa_to_sheet(instructions)
-    ws2['!cols'] = [{ wch: 28 }, { wch: 72 }]
+    ws2['!cols'] = [{ wch: 30 }, { wch: 72 }]
 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws1, 'Ruban pédagogique')
@@ -511,9 +525,14 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
 
       // Ignorer la ligne d'en-tête si la colonne A n'est pas un nombre
+      // Détecter le format avant filtrage
+      const headerRow = rows[0] || []
+      const isNewFmtCheck = String(headerRow[2] || '').toLowerCase().includes('objectif') ||
+                             String(headerRow[3] || '').toLowerCase().includes('comp')
+      const seanceTitreCol = isNewFmtCheck ? 4 : 2
       const dataRows = rows.filter((row, idx) => {
         if (idx === 0 && isNaN(Number(row[0])) && String(row[0]).trim() !== '') return false
-        const seanceTitre = String(row[2] || '').trim()
+        const seanceTitre = String(row[seanceTitreCol] || '').trim()
         return seanceTitre !== ''
       })
 
@@ -523,15 +542,32 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
       }
 
       // Grouper par numéro de séquence (colonne A)
+      // Nouveau format (8 colonnes) : N°, TitreSeq, Objectifs, Compétences, TitreSeance, Type, Durée, ObjectifSeance
+      // Ancien format (6 colonnes) : N°, TitreSeq, TitreSeance, Type, Durée, ObjectifSeance
+      const isNewFormat = isNewFmtCheck
+
       const seqMap = new Map()
       for (const row of dataRows) {
         const seqNum = Number(row[0])
         if (!seqNum || isNaN(seqNum)) continue
         const seqTitre = String(row[1] || '').trim()
-        const seanceTitre = String(row[2] || '').trim()
-        const typeRaw = String(row[3] || '').trim()
-        const duree = parseFloat(row[4]) || 1
-        const objectif = String(row[5] || '').trim()
+
+        let objectifsPedago, competences, seanceTitre, typeRaw, duree, objectif
+        if (isNewFormat) {
+          objectifsPedago = String(row[2] || '').trim()
+          competences = String(row[3] || '').trim()
+          seanceTitre = String(row[4] || '').trim()
+          typeRaw = String(row[5] || '').trim()
+          duree = parseFloat(row[6]) || 1
+          objectif = String(row[7] || '').trim()
+        } else {
+          objectifsPedago = ''
+          competences = ''
+          seanceTitre = String(row[2] || '').trim()
+          typeRaw = String(row[3] || '').trim()
+          duree = parseFloat(row[4]) || 1
+          objectif = String(row[5] || '').trim()
+        }
 
         // Normaliser le type
         const typeLow = typeRaw.toLowerCase()
@@ -541,9 +577,12 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
         else if (TYPES_SEANCE.includes(typeRaw)) type = typeRaw
 
         if (!seqMap.has(seqNum)) {
-          seqMap.set(seqNum, { titre: seqTitre || `Séquence ${seqNum}`, seances: [] })
-        } else if (seqTitre && !seqMap.get(seqNum).titre) {
-          seqMap.get(seqNum).titre = seqTitre
+          seqMap.set(seqNum, { titre: seqTitre || `Séquence ${seqNum}`, objectifs: objectifsPedago, competences, seances: [] })
+        } else {
+          const entry = seqMap.get(seqNum)
+          if (seqTitre && !entry.titre) entry.titre = seqTitre
+          if (objectifsPedago && !entry.objectifs) entry.objectifs = objectifsPedago
+          if (competences && !entry.competences) entry.competences = competences
         }
 
         if (seanceTitre) {
@@ -584,8 +623,8 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
     const newSeqs = importData.map(seq => ({
       id: genId('seq'),
       titre: seq.titre,
-      objectifs: '',
-      competences: '',
+      objectifs: seq.objectifs || '',
+      competences: seq.competences || '',
       documentSupport: null,
       seances: seq.seances.map(s => ({ id: genId('s'), ...s })),
     }))

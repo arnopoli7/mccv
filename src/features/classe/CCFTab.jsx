@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plus, Trash2, Edit2, ChevronDown, ChevronRight, UserPlus } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { useData } from '../../contexts/DataContext'
 import { useToast } from '../../contexts/ToastContext'
 import Modal from '../../components/ui/Modal'
@@ -7,6 +8,8 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import FileUpload from '../../components/ui/FileUpload'
 import Badge from '../../components/ui/Badge'
 import { genId } from '../../utils/id'
+
+const CCF_COLORS = ['#6366f1', '#f97316', '#22c55e', '#ef4444', '#a855f7', '#06b6d4', '#eab308', '#ec4899']
 
 export default function CCFTab({ classe, anneeId }) {
   const { ccf, add, update, remove } = useData()
@@ -264,6 +267,124 @@ export default function CCFTab({ classe, anneeId }) {
           </div>
         )
       })}
+
+      {/* ── BILAN ÉLÈVES ── */}
+      {(() => {
+        // Construire le jeu de données : une entrée par élève avec sa note par CCF
+        const allEleves = new Map() // nom → { [ccfTitre]: note }
+        ccfList.forEach(c => {
+          ;(c.ordrePassage || []).forEach(e => {
+            if (!allEleves.has(e.nom)) allEleves.set(e.nom, {})
+            if (e.note !== null && e.note !== undefined && e.note !== '') {
+              allEleves.get(e.nom)[c.titre] = parseFloat(e.note)
+            }
+          })
+        })
+
+        if (allEleves.size === 0) return null
+
+        // Données graphique
+        const chartData = Array.from(allEleves.entries()).map(([nom, notes]) => ({
+          nom: nom.length > 12 ? nom.slice(0, 11) + '…' : nom,
+          nomFull: nom,
+          ...notes,
+        }))
+
+        // Moyennes par élève
+        const eleveMoyennes = Array.from(allEleves.entries()).map(([nom, notes]) => {
+          const vals = Object.values(notes)
+          const moy = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+          return { nom, moy }
+        }).filter(e => e.moy !== null).sort((a, b) => a.moy - b.moy)
+
+        const elevesASurveiller = eleveMoyennes.filter(e => e.moy < 10)
+
+        function indicateur(moy) {
+          if (moy < 8) return '🔴'
+          if (moy <= 10) return '🟡'
+          return '🟢'
+        }
+
+        return (
+          <div className="card p-5 space-y-5">
+            <h3 className="font-semibold text-gray-800 dark:text-gray-100">📊 Bilan élèves</h3>
+
+            {/* Graphique */}
+            {chartData.length > 0 && ccfList.some(c => (c.ordrePassage || []).some(e => e.note !== null && e.note !== undefined && e.note !== '')) && (
+              <div>
+                <p className="text-xs text-gray-500 mb-3">Notes par élève (toutes CCF confondues)</p>
+                <div style={{ height: Math.max(220, chartData.length * 28) }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                      <XAxis
+                        dataKey="nom"
+                        tick={{ fontSize: 11 }}
+                        angle={-35}
+                        textAnchor="end"
+                        interval={0}
+                        height={70}
+                      />
+                      <YAxis domain={[0, 20]} tick={{ fontSize: 11 }} tickCount={5} />
+                      <Tooltip
+                        formatter={(value, name) => [`${value}/20`, name]}
+                        labelFormatter={label => {
+                          const entry = chartData.find(d => d.nom === label)
+                          return entry?.nomFull || label
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                      {ccfList.map((c, i) => (
+                        <Bar key={c.id} dataKey={c.titre} fill={CCF_COLORS[i % CCF_COLORS.length]} radius={[3, 3, 0, 0]} maxBarSize={30} />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Indicateurs par élève */}
+            {eleveMoyennes.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-3">Indicateur par élève</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {eleveMoyennes.map(({ nom, moy }) => (
+                    <div key={nom} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-700/40">
+                      <span className="text-base">{indicateur(moy)}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-800 dark:text-gray-100 truncate">{nom}</p>
+                        <p className="text-xs text-gray-500">{moy.toFixed(1)}/20</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Élèves à surveiller */}
+            {elevesASurveiller.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">
+                  Élèves à surveiller (moyenne &lt; 10)
+                </p>
+                <div className="space-y-1">
+                  {elevesASurveiller.map(({ nom, moy }) => (
+                    <div key={nom} className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/40">
+                      <div className="flex items-center gap-2">
+                        <span>{moy < 8 ? '🔴' : '🟡'}</span>
+                        <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{nom}</span>
+                      </div>
+                      <span className={`text-sm font-bold ${moy < 8 ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                        {moy.toFixed(1)}/20
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Modal CCF */}
       <Modal isOpen={showCCFModal} onClose={() => setShowCCFModal(false)}

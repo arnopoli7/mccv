@@ -4,7 +4,10 @@ import { ArrowLeft, Plus, Trash2, Edit2, Tag } from 'lucide-react'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/ui/Modal'
+import FileUpload from '../components/ui/FileUpload'
 import { genId } from '../utils/id'
+import { parseISO } from '../utils/dateUtils'
+import { differenceInWeeks } from 'date-fns'
 
 import RubanPedagogique from '../features/classe/RubanPedagogique'
 import SeancesTab from '../features/classe/SeancesTab'
@@ -165,6 +168,53 @@ export default function ClasseFiche() {
                 </div>
               </div>
             )}
+
+            {/* Indicateur d'avancement */}
+            {total > 0 && anneeActive && (() => {
+              const today = new Date()
+              const fin = parseISO(anneeActive.dateFin)
+              const debut = parseISO(anneeActive.dateDebut)
+              const totalWeeks = Math.max(1, differenceInWeeks(fin, debut))
+              const weeksElapsed = Math.min(totalWeeks, Math.max(0, differenceInWeeks(today, debut)))
+              const rythmeAttendu = weeksElapsed / totalWeeks
+              const rythmeReel = done / total
+              const ratio = rythmeAttendu > 0 ? (rythmeReel / rythmeAttendu) * 100 : (done > 0 ? 110 : 100)
+              let indicator, label
+              if (ratio > 110) { indicator = '🟢'; label = 'En avance' }
+              else if (ratio >= 90) { indicator = '🟡'; label = 'Dans les temps' }
+              else { indicator = '🔴'; label = 'En retard' }
+              return (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-base">{indicator}</span>
+                  <span className="text-xs text-gray-500">{label}</span>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      </div>
+
+      {/* 🎯 Référentiel & Programme */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-4">🎯 Référentiel &amp; Programme</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="label">Référentiel officiel / Programme</label>
+            <input
+              className="input"
+              placeholder="ex: Bac Pro TCVA — Référentiel 2021"
+              value={classe.referentiel || ''}
+              onChange={e => update('classes', id, { referentiel: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Référentiel (PDF)</label>
+            <FileUpload
+              value={classe.referentielPDF || null}
+              onChange={f => update('classes', id, { referentielPDF: f })}
+              label="Joindre le référentiel officiel"
+              storagePath={`${id}/referentiel`}
+            />
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { CheckCircle, Clock, BookOpen } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { CheckCircle, Clock, BookOpen, Star } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { useToast } from '../../contexts/ToastContext'
 import Modal from '../../components/ui/Modal'
@@ -11,6 +11,38 @@ const TYPE_BADGE = {
   'Cours': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
   'TD / Exercices': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   'Évaluation': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+}
+
+const ETOILES_LABELS = ['', 'Séance difficile / à revoir', 'Séance correcte', 'Très bonne séance / à reproduire']
+
+function StarRating({ value = 0, onChange, readOnly = false }) {
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3].map(n => (
+        <button
+          key={n}
+          type="button"
+          disabled={readOnly}
+          onClick={() => onChange && onChange(value === n ? 0 : n)}
+          className={`transition-colors ${readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110'}`}
+          title={ETOILES_LABELS[n]}
+        >
+          <Star
+            size={18}
+            className={n <= value ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300 dark:text-gray-600'}
+          />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function useDebounce(callback, delay) {
+  const timerRef = useRef(null)
+  return (...args) => {
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => callback(...args), delay)
+  }
 }
 
 export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
@@ -106,6 +138,36 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
     toast.info('Document supprimé.')
   }
 
+  function getNote(item) {
+    if (item.calEntry) return item.calEntry.noteCours || ''
+    return item.rubanSeance.noteCours || ''
+  }
+
+  function getEtoiles(item) {
+    if (item.calEntry) return item.calEntry.etoiles || 0
+    return item.rubanSeance.etoiles || 0
+  }
+
+  function saveNote(item, note) {
+    const { rubanSeance, seq, calEntry } = item
+    if (calEntry) {
+      update('seancesCalendrier', calEntry.id, { noteCours: note })
+    } else {
+      updateRubanSeance(seq.id, rubanSeance.id, { noteCours: note })
+    }
+  }
+
+  function saveEtoiles(item, etoiles) {
+    const { rubanSeance, seq, calEntry } = item
+    if (calEntry) {
+      update('seancesCalendrier', calEntry.id, { etoiles })
+      setSelectedItem(prev => prev ? { ...prev, calEntry: { ...prev.calEntry, etoiles } } : null)
+    } else {
+      updateRubanSeance(seq.id, rubanSeance.id, { etoiles })
+      setSelectedItem(prev => prev ? { ...prev, rubanSeance: { ...prev.rubanSeance, etoiles } } : null)
+    }
+  }
+
   // Build per-sequence item lists: deployed (sorted by date) then undeployed
   const seqItems = sequences.map(seq => {
     const deployed = []
@@ -127,6 +189,8 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
   const selItem = selectedItem
   const selStatut = selItem ? getStatut(selItem) : null
   const selDocs = selItem ? getDocs(selItem) : []
+  const selNote = selItem ? getNote(selItem) : ''
+  const selEtoiles = selItem ? getEtoiles(selItem) : 0
 
   return (
     <div className="space-y-4">
@@ -140,6 +204,7 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
               const { rubanSeance, calEntry } = item
               const statut = getStatut(item)
               const deployed = !!calEntry
+              const etoiles = getEtoiles(item)
               return (
                 <div
                   key={rubanSeance.id}
@@ -162,6 +227,13 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
                         </span>
                       )}
                       {deployed && statutBadge(statut)}
+                      {etoiles > 0 && (
+                        <span className="flex gap-0.5">
+                          {[1, 2, 3].map(n => (
+                            <Star key={n} size={12} className={n <= etoiles ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200 dark:text-gray-700'} />
+                          ))}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {deployed
@@ -196,69 +268,124 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
         size="md"
       >
         {selItem && (
-          <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-gray-400 mb-0.5">Séquence</p>
-                <p className="font-medium text-gray-800 dark:text-gray-100">{selItem.seq.titre}</p>
-              </div>
-              <div>
-                <p className="text-gray-400 mb-0.5">Type</p>
-                <p className="font-medium">
-                  {selItem.rubanSeance.type && (
-                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${TYPE_BADGE[selItem.rubanSeance.type] || 'bg-gray-100 text-gray-600'}`}>
-                      {selItem.rubanSeance.type}
-                    </span>
-                  )}
-                </p>
-              </div>
-              <div>
-                <p className="text-gray-400 mb-0.5">Date</p>
-                <p className="font-medium text-gray-800 dark:text-gray-100">
-                  {selItem.calEntry ? formatDateLong(selItem.calEntry.date) : 'Date non définie'}
-                </p>
-              </div>
-              {selItem.calEntry && (
-                <div>
-                  <p className="text-gray-400 mb-0.5">Horaire</p>
-                  <p className="font-medium text-gray-800 dark:text-gray-100">
-                    {selItem.calEntry.heureDebut} – {selItem.calEntry.heureFin}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <p className="text-sm text-gray-400 mb-2">Statut</p>
-              <button
-                onClick={() => toggleStatut(selItem)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm border-2 transition-all
-                  ${selStatut === 'faite'
-                    ? 'border-green-400 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
-                    : 'border-orange-300 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300'
-                  }`}
-              >
-                {selStatut === 'faite'
-                  ? <><CheckCircle size={16} /> Faite — cliquer pour remettre à faire</>
-                  : <><Clock size={16} /> À faire — cliquer pour marquer faite</>
-                }
-              </button>
-            </div>
-
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
-                Documents ({selDocs.length})
-              </p>
-              <MultiFileUpload
-                files={selDocs}
-                onAdd={doc => addDoc(selItem, doc)}
-                onRemove={idx => removeDoc(selItem, idx)}
-                storagePath={`${classe.id}/seances/${selItem.calEntry?.id || selItem.rubanSeance?.id}`}
-              />
-            </div>
-          </div>
+          <SeanceModalContent
+            selItem={selItem}
+            selStatut={selStatut}
+            selDocs={selDocs}
+            selNote={selNote}
+            selEtoiles={selEtoiles}
+            classe={classe}
+            onToggleStatut={() => toggleStatut(selItem)}
+            onAddDoc={doc => addDoc(selItem, doc)}
+            onRemoveDoc={idx => removeDoc(selItem, idx)}
+            onSaveNote={note => saveNote(selItem, note)}
+            onSaveEtoiles={e => saveEtoiles(selItem, e)}
+          />
         )}
       </Modal>
+    </div>
+  )
+}
+
+function SeanceModalContent({ selItem, selStatut, selDocs, selNote, selEtoiles, classe, onToggleStatut, onAddDoc, onRemoveDoc, onSaveNote, onSaveEtoiles }) {
+  const [noteValue, setNoteValue] = useState(selNote)
+  const debouncedSave = useDebounce(onSaveNote, 1000)
+
+  // Reset quand l'item change
+  useEffect(() => {
+    setNoteValue(selNote)
+  }, [selItem?.rubanSeance?.id, selItem?.calEntry?.id]) // eslint-disable-line
+
+  function handleNoteChange(e) {
+    setNoteValue(e.target.value)
+    debouncedSave(e.target.value)
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <p className="text-gray-400 mb-0.5">Séquence</p>
+          <p className="font-medium text-gray-800 dark:text-gray-100">{selItem.seq.titre}</p>
+        </div>
+        <div>
+          <p className="text-gray-400 mb-0.5">Type</p>
+          <p className="font-medium">
+            {selItem.rubanSeance.type && (
+              <span className={`text-xs px-2 py-0.5 rounded font-medium ${TYPE_BADGE[selItem.rubanSeance.type] || 'bg-gray-100 text-gray-600'}`}>
+                {selItem.rubanSeance.type}
+              </span>
+            )}
+          </p>
+        </div>
+        <div>
+          <p className="text-gray-400 mb-0.5">Date</p>
+          <p className="font-medium text-gray-800 dark:text-gray-100">
+            {selItem.calEntry ? formatDateLong(selItem.calEntry.date) : 'Date non définie'}
+          </p>
+        </div>
+        {selItem.calEntry && (
+          <div>
+            <p className="text-gray-400 mb-0.5">Horaire</p>
+            <p className="font-medium text-gray-800 dark:text-gray-100">
+              {selItem.calEntry.heureDebut} – {selItem.calEntry.heureFin}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <p className="text-sm text-gray-400 mb-2">Statut</p>
+        <button
+          onClick={onToggleStatut}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm border-2 transition-all
+            ${selStatut === 'faite'
+              ? 'border-green-400 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+              : 'border-orange-300 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300'
+            }`}
+        >
+          {selStatut === 'faite'
+            ? <><CheckCircle size={16} /> Faite — cliquer pour remettre à faire</>
+            : <><Clock size={16} /> À faire — cliquer pour marquer faite</>
+          }
+        </button>
+      </div>
+
+      {/* Note de cours */}
+      <div>
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">📝 Note de cours</p>
+        <textarea
+          className="input resize-none text-sm"
+          rows={4}
+          placeholder="Comment s'est passée cette séance ?"
+          value={noteValue}
+          onChange={handleNoteChange}
+        />
+        <p className="text-xs text-gray-400 mt-1">Sauvegarde automatique</p>
+      </div>
+
+      {/* Étoiles */}
+      <div>
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">Évaluation de la séance</p>
+        <div className="flex items-center gap-3">
+          <StarRating value={selEtoiles} onChange={onSaveEtoiles} />
+          {selEtoiles > 0 && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">{ETOILES_LABELS[selEtoiles]}</span>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
+          Documents ({selDocs.length})
+        </p>
+        <MultiFileUpload
+          files={selDocs}
+          onAdd={onAddDoc}
+          onRemove={onRemoveDoc}
+          storagePath={`${classe.id}/seances/${selItem.calEntry?.id || selItem.rubanSeance?.id}`}
+        />
+      </div>
     </div>
   )
 }
