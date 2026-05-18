@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { Plus, ChevronDown, ChevronRight, Trash2, Edit2, Copy, Rocket, Printer, CalendarX, FileSpreadsheet, Download } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
@@ -12,7 +12,7 @@ import { isInVacances, parseISO, addDays, toISODate, formatDate } from '../../ut
 
 const TYPES_SEANCE = ['Cours', 'TD / Exercices', 'Évaluation']
 
-export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
+export default function RubanPedagogique({ classe, anneeId, currentMatiere, autoDeploy = false, onAutoDeployDone }) {
   const { get, set, setAndAwait, add, update, remove, classes, anneesScolaires, getParams } = useData()
   const { getCurrentUser } = useAuth()
   const toast = useToast()
@@ -71,6 +71,17 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere }) {
   const [showImportConflict, setShowImportConflict] = useState(false)
 
   const sequences = ruban?.sequences || []
+
+  // ── Auto-déploiement après import depuis le Générateur
+  const autoDeployedRef = useRef(false)
+  useEffect(() => {
+    if (!autoDeploy || autoDeployedRef.current) return
+    if (!ruban || sequences.length === 0) return
+    autoDeployedRef.current = true
+    onAutoDeployDone?.()
+    // Petit délai pour laisser les données se stabiliser
+    setTimeout(() => deployerSurCalendrier(), 200)
+  }, [autoDeploy, ruban]) // eslint-disable-line
 
   // ── Séquences CRUD
   function openCreateSeq() {

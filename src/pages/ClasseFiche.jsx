@@ -38,6 +38,7 @@ export default function ClasseFiche() {
   const [showMatiereModal, setShowMatiereModal] = useState(false)
   const [matiereNom, setMatiereNom] = useState('')
   const [selectedMatiere, setSelectedMatiere] = useState(null)
+  const [autoDeploy, setAutoDeploy] = useState(false)
 
   const classe = find('classes', id)
   const anneeActive = getAnneeActive()
@@ -56,10 +57,24 @@ export default function ClasseFiche() {
   }, [searchParams])
 
   useEffect(() => {
+    if (!classe) return
+    // Check for auto-deploy request from Generateur
+    const pending = sessionStorage.getItem('mccv_autodeploy')
+    if (pending) {
+      try {
+        const { classeId, matiereId } = JSON.parse(pending)
+        if (classeId === id) {
+          sessionStorage.removeItem('mccv_autodeploy')
+          if (matiereId) setSelectedMatiere(matiereId)
+          setAutoDeploy(true)
+          return
+        }
+      } catch { /* ignore */ }
+    }
     if (classe?.matieres?.length > 0 && !selectedMatiere) {
       setSelectedMatiere(classe.matieres[0].id)
     }
-  }, [classe?.id])
+  }, [classe?.id]) // eslint-disable-line
 
   if (!classe) {
     return (
@@ -252,6 +267,8 @@ export default function ClasseFiche() {
             classe={classe}
             anneeId={anneeId}
             currentMatiere={currentMatiere}
+            autoDeploy={autoDeploy}
+            onAutoDeployDone={() => setAutoDeploy(false)}
           />
         )}
         {tab === 'seances' && (
