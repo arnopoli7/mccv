@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { CheckCircle, Clock, BookOpen, Star } from 'lucide-react'
+import { CheckCircle, Clock, BookOpen, Star, Trash2 } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { useToast } from '../../contexts/ToastContext'
 import Modal from '../../components/ui/Modal'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { MultiFileUpload } from '../../components/ui/FileUpload'
 import { formatDate, formatDateLong, parseISO, isBefore, isSameDay } from '../../utils/dateUtils'
 import { statutBadge } from '../../components/ui/Badge'
@@ -46,15 +47,33 @@ function useDebounce(callback, delay) {
 }
 
 export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
-  const { rubanPedagogique, seancesCalendrier, update } = useData()
+  const { rubanPedagogique, seancesCalendrier, update, remove, get, set } = useData()
   const toast = useToast()
   const [selectedItem, setSelectedItem] = useState(null)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selected, setSelected] = useState(new Set()) // rubanSeance.id
+  const [confirmType, setConfirmType] = useState(null) // 'single' | 'all' | 'selection'
+  const [pendingDelete, setPendingDelete] = useState(null) // { seqId, seanceId, calEntryId? }
+  const orphanCheckedRef = useRef(false)
 
   const rubanList = rubanPedagogique({ classeId: classe.id, anneeScolaireId: anneeId })
   const ruban = rubanList[0] || null
   const calEntries = seancesCalendrier({ classeId: classe.id, anneeScolaireId: anneeId })
   const sequences = ruban?.sequences || []
   const totalSeances = sequences.reduce((acc, seq) => acc + (seq.seances?.length || 0), 0)
+
+  // Nettoyage des séances orphelines au chargement
+  useEffect(() => {
+    if (orphanCheckedRef.current) return
+    orphanCheckedRef.current = true
+    const validIds = new Set(sequences.flatMap(seq => (seq.seances || []).map(s => s.id)))
+    const orphans = calEntries.filter(c => !validIds.has(c.seanceRubanId))
+    if (orphans.length > 0) {
+      orphans.forEach(o => remove('seancesCalendrier', o.id))
+      const n = orphans.length
+      toast.info(`${n} séance${n > 1 ? 's' : ''} orpheline${n > 1 ? 's' : ''} supprimée${n > 1 ? 's' : ''} automatiquement.`)
+    }
+  }, []) // eslint-disable-line
 
   if (!ruban || totalSeances === 0) {
     return (
@@ -168,6 +187,55 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
     }
   }
 
+  // Suppression individuelle (deployed → retire du calendrier ; non-deployed → retire du ruban)
+  function deleteSingle({ seqId, seanceId, calEntryId }) {
+    if (calEntryId) remove('seancesCalendrier', calEntryId)
+    const newSeqs = sequences.map(s =>
+      s.id !== seqId ? s : { ...s, seances: (s.seances || []).filter(r => r.id !== seanceId) }
+    )
+    update('rubanPedagogique', ruban.id, { sequences: newSeqs })
+    if (selectedItem?.rubanSeance?.id === seanceId) setSelectedItem(null)
+    toast.success('Séance supprimée.')
+  }
+
+  // Suppression de toutes les séances (calendrier + ruban)
+  function deleteAll() {
+    const allCal = get('seancesCalendrier')
+    set('seancesCalendrier', allCal.filter(c => !(c.classeId === classe.id && c.anneeScolaireId === anneeId)))
+    update('rubanPedagogique', ruban.id, { sequences: sequences.map(s => ({ ...s, seances: [] })) })
+    setSelected(new Set())
+    setSelectedItem(null)
+    setSelectionMode(false)
+    toast.success('Toutes les séances ont été supprimées.')
+  }
+
+  // Suppression groupée
+  function deleteSelection() {
+    const count = selected.size
+    // Retire les calEntries des séances déployées sélectionnées
+    const calIdsToRemove = new Set()
+    seqItems.forEach(({ items }) =>
+      items.forEach(item => { if (selected.has(item.rubanSeance.id) && item.calEntry) calIdsToRemove.add(item.calEntry.id) })
+    )
+    const allCal = get('seancesCalendrier')
+    set('seancesCalendrier', allCal.filter(c => !calIdsToRemove.has(c.id)))
+    // Retire du ruban
+    const newSeqs = sequences.map(s => ({ ...s, seances: (s.seances || []).filter(r => !selected.has(r.id)) }))
+    update('rubanPedagogique', ruban.id, { sequences: newSeqs })
+    if (selectedItem && selected.has(selectedItem.rubanSeance.id)) setSelectedItem(null)
+    setSelected(new Set())
+    setSelectionMode(false)
+    toast.success(`${count} séance${count > 1 ? 's' : ''} supprimée${count > 1 ? 's' : ''}.`)
+  }
+
+  function toggleSelect(rubanSeanceId) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(rubanSeanceId) ? next.delete(rubanSeanceId) : next.add(rubanSeanceId)
+      return next
+    })
+  }
+
   // Build per-sequence item lists: deployed (sorted by date) then undeployed
   const seqItems = sequences.map(seq => {
     const deployed = []
@@ -186,6 +254,8 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
     return { seq, items: [...deployed, ...undeployed] }
   }).filter(s => s.items.length > 0)
 
+  const undeployedCount = seqItems.reduce((acc, { items }) => acc + items.filter(i => !i.calEntry).length, 0)
+
   const selItem = selectedItem
   const selStatut = selItem ? getStatut(selItem) : null
   const selDocs = selItem ? getDocs(selItem) : []
@@ -194,6 +264,58 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
 
   return (
     <div className="space-y-4">
+      {/* Barre d'actions */}
+      <div className="flex flex-wrap items-center gap-2">
+        {selectionMode && selected.size > 0 && (
+          <button
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+            onClick={() => setConfirmType('selection')}
+          >
+            <Trash2 size={14} />
+            Supprimer la sélection ({selected.size})
+          </button>
+        )}
+        {selectionMode && (
+          <button
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 transition-colors"
+            onClick={() => { setSelectionMode(false); setSelected(new Set()) }}
+          >
+            Annuler
+          </button>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors
+              ${selectionMode
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-700'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200'
+              }`}
+            onClick={() => { setSelectionMode(m => !m); setSelected(new Set()) }}
+          >
+            ☑️ Sélection multiple
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+            onClick={() => setConfirmType('all')}
+          >
+            <Trash2 size={14} />
+            Effacer toutes les séances
+          </button>
+        </div>
+      </div>
+
+      {/* Bandeau séances non planifiées */}
+      {undeployedCount > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl text-sm">
+          <span className="flex-1 text-amber-800 dark:text-amber-200">
+            ⚠️ {undeployedCount} séance{undeployedCount > 1 ? 's' : ''} non planifiée{undeployedCount > 1 ? 's' : ''} — Déployez le ruban pour les placer sur le calendrier
+          </span>
+          {onGoToRuban && (
+            <button className="btn-secondary text-xs shrink-0" onClick={onGoToRuban}>Aller au Ruban</button>
+          )}
+        </div>
+      )}
+
       {seqItems.map(({ seq, items }) => (
         <div key={seq.id} className="card overflow-hidden">
           <div className="px-5 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800">
@@ -201,16 +323,29 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
           </div>
           <div className="divide-y divide-gray-100 dark:divide-gray-700">
             {items.map(item => {
-              const { rubanSeance, calEntry } = item
+              const { rubanSeance, calEntry, seq: itemSeq } = item
               const statut = getStatut(item)
               const deployed = !!calEntry
               const etoiles = getEtoiles(item)
+              const isSelected = selected.has(rubanSeance.id)
               return (
                 <div
                   key={rubanSeance.id}
-                  className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer"
+                  className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer transition-colors
+                    ${isSelected ? 'bg-red-50/60 dark:bg-red-900/10' : ''}`}
                   onClick={() => setSelectedItem(item)}
                 >
+                  {/* Checkbox (mode sélection) */}
+                  {selectionMode && (
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(rubanSeance.id)}
+                      onClick={e => e.stopPropagation()}
+                      className="w-4 h-4 shrink-0 accent-red-500 cursor-pointer"
+                    />
+                  )}
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm text-gray-800 dark:text-gray-100">
@@ -242,6 +377,20 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
                       }
                     </p>
                   </div>
+
+                  {/* Bouton supprimer individuel — toujours visible, toujours rouge */}
+                  <button
+                    onClick={e => {
+                      e.stopPropagation()
+                      setPendingDelete({ seqId: itemSeq.id, seanceId: rubanSeance.id, calEntryId: calEntry?.id || null })
+                      setConfirmType('single')
+                    }}
+                    className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
+                    title="Supprimer cette séance"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+
                   <button
                     onClick={e => { e.stopPropagation(); toggleStatut(item) }}
                     className={`p-1.5 rounded-lg transition-colors shrink-0
@@ -259,6 +408,37 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
           </div>
         </div>
       ))}
+
+      {/* Confirmations suppression */}
+      <ConfirmDialog
+        isOpen={confirmType === 'single'}
+        onClose={() => { setConfirmType(null); setPendingDelete(null) }}
+        onConfirm={() => deleteSingle(pendingDelete)}
+        title="Supprimer cette séance"
+        message={pendingDelete?.calEntryId
+          ? "Supprimer cette séance du calendrier et du ruban pédagogique ?"
+          : "Supprimer cette séance du ruban pédagogique ? Elle n'est pas encore planifiée."}
+        confirmLabel="Oui, supprimer"
+        danger
+      />
+      <ConfirmDialog
+        isOpen={confirmType === 'all'}
+        onClose={() => setConfirmType(null)}
+        onConfirm={deleteAll}
+        title="Effacer toutes les séances"
+        message="Supprimer TOUTES les séances de cette classe (calendrier + ruban pédagogique) ? Cette action est irréversible."
+        confirmLabel="Oui, tout supprimer"
+        danger
+      />
+      <ConfirmDialog
+        isOpen={confirmType === 'selection'}
+        onClose={() => setConfirmType(null)}
+        onConfirm={deleteSelection}
+        title="Supprimer la sélection"
+        message={`Supprimer les ${selected.size} séance${selected.size > 1 ? 's' : ''} sélectionnée${selected.size > 1 ? 's' : ''} (calendrier + ruban) ?`}
+        confirmLabel="Oui, supprimer"
+        danger
+      />
 
       {/* Modal fiche séance */}
       <Modal
