@@ -96,6 +96,7 @@ export default function Generateur() {
   const [pptError, setPptError] = useState(null)
   const [expandedSlides, setExpandedSlides] = useState({})
   const [copied, setCopied] = useState(false)
+  const [pptGenerating, setPptGenerating] = useState(false)
 
   // ── Données communes ──────────────────────────────────────────────────────
   const classes = get('classes')
@@ -499,6 +500,177 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
     } catch {
       toast.error('Impossible de copier. Vérifiez les permissions du navigateur.')
     }
+  }
+
+  // ── Génération du fichier PPTX ────────────────────────────────────────────
+  async function handleDownloadPPT() {
+    if (!pptResult || pptGenerating) return
+    setPptGenerating(true)
+    try {
+      const { default: PptxGenJS } = await import('pptxgenjs')
+      const prs = new PptxGenJS()
+      prs.layout = 'LAYOUT_WIDE' // 10 × 5.625 inches
+
+      const pal = pptSelectedPalette
+      const h = c => c.replace('#', '')
+      const C = {
+        primary: h(pal.primary), accent: h(pal.accent),
+        light: h(pal.light),     pale:   h(pal.pale),
+        white: 'FFFFFF', dark: '1a1a2e', amber: 'F59E0B',
+        text: '1F2937',  gray: '6B7280',
+      }
+      const W = 10, H = 5.625, BAND_H = 0.85
+
+      for (const slide of pptResult.slides) {
+        const sl = prs.addSlide()
+
+        // ── TITRE ──────────────────────────────────────────────────────
+        if (slide.type === 'titre') {
+          sl.background = { fill: C.primary }
+          sl.addShape(prs.ShapeType.rect, { x: 0, y: H - 0.6, w: W, h: 0.6, fill: { color: C.accent }, line: { color: C.accent } })
+          if (pptForm.chapitre) {
+            sl.addText(`Chapitre ${pptForm.chapitre}`, { x: 0.5, y: 0.65, w: W - 1, h: 0.5, fontSize: 20, color: C.amber, align: 'center', fontFace: 'Calibri' })
+          }
+          sl.addText(slide.titre || pptForm.titre, {
+            x: 0.8, y: 1.4, w: W - 1.6, h: 2.3,
+            fontSize: 32, color: C.white, bold: true, align: 'center', fontFace: 'Georgia', valign: 'middle', wrap: true,
+          })
+          const subtitle = [pptForm.niveau, pptMatiere?.nom].filter(Boolean).join(' · ')
+          if (subtitle) sl.addText(subtitle, { x: 0.8, y: 3.8, w: W - 1.6, h: 0.5, fontSize: 16, color: C.white, align: 'center', fontFace: 'Calibri' })
+          if (pptForm.option) sl.addText(pptForm.option, { x: 0.8, y: 4.2, w: W - 1.6, h: 0.38, fontSize: 13, color: C.white, align: 'center', fontFace: 'Calibri', italic: true })
+
+        // ── VOCABULAIRE ────────────────────────────────────────────────
+        } else if (slide.type === 'vocabulaire') {
+          sl.background = { fill: C.dark }
+          sl.addText('Vocabulaire clé', { x: 0.5, y: 0.1, w: W - 1, h: 0.6, fontSize: 22, color: C.white, bold: true, align: 'center', fontFace: 'Georgia' })
+          sl.addShape(prs.ShapeType.rect, { x: 3.5, y: 0.68, w: 3, h: 0.06, fill: { color: C.accent }, line: { color: C.accent } })
+
+          // Collect term/definition pairs
+          const termPairs = []
+          for (const item of (slide.contenu || [])) {
+            const val = String(item.valeur || '')
+            const parse = line => {
+              const p = line.replace(/^[-•*]\s*/, '').split(':')
+              return { terme: p[0]?.trim() || line.trim(), def: p.slice(1).join(':').trim() }
+            }
+            if (item.type === 'liste') {
+              val.split('\n').filter(l => l.trim()).forEach(l => termPairs.push(parse(l)))
+            } else {
+              termPairs.push(parse(val))
+            }
+            if (termPairs.length >= 6) break
+          }
+
+          const COLS = 3, cardW = 2.9, cardH = 1.9, gX = 0.25, gY = 0.18
+          for (let i = 0; i < Math.min(termPairs.length, 6); i++) {
+            const col = i % COLS, row = Math.floor(i / COLS)
+            const cx = 0.45 + col * (cardW + gX), cy = 0.88 + row * (cardH + gY)
+            const { terme, def } = termPairs[i]
+            sl.addShape(prs.ShapeType.rect, { x: cx, y: cy, w: cardW, h: cardH, fill: { color: '0d0d23' }, line: { color: C.primary, pt: 1.5 } })
+            sl.addText(terme, { x: cx + 0.12, y: cy + 0.1, w: cardW - 0.24, h: 0.48, fontSize: 13, color: C.amber, bold: true, fontFace: 'Calibri', wrap: true })
+            sl.addShape(prs.ShapeType.rect, { x: cx + 0.12, y: cy + 0.58, w: cardW - 0.24, h: 0.03, fill: { color: C.primary }, line: { color: C.primary } })
+            if (def) sl.addText(def, { x: cx + 0.12, y: cy + 0.66, w: cardW - 0.24, h: cardH - 0.8, fontSize: 10.5, color: 'D1D5DB', fontFace: 'Calibri', wrap: true })
+          }
+
+        // ── PLAN ───────────────────────────────────────────────────────
+        } else if (slide.type === 'plan') {
+          sl.background = { fill: 'FFFFFF' }
+          sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: W, h: BAND_H, fill: { color: C.primary }, line: { color: C.primary } })
+          sl.addText(slide.titre || 'Plan du cours', { x: 0.4, y: 0.05, w: W - 0.8, h: BAND_H - 0.1, fontSize: 22, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle' })
+          let iy = BAND_H + 0.3
+          for (const item of (slide.contenu || [])) {
+            if (iy > H - 0.4) break
+            const val = String(item.valeur || '').replace(/^[-•*\d.)\s]+/, '')
+            sl.addShape(prs.ShapeType.rect, { x: 0.5, y: iy + 0.08, w: 0.07, h: 0.44, fill: { color: C.accent }, line: { color: C.accent } })
+            sl.addText(val, { x: 0.72, y: iy, w: W - 1.2, h: 0.58, fontSize: 14, color: C.text, fontFace: 'Calibri', valign: 'middle' })
+            iy += 0.68
+          }
+
+        // ── SYNTHÈSE ───────────────────────────────────────────────────
+        } else if (slide.type === 'synthese') {
+          sl.background = { fill: 'FFFFFF' }
+          sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: W, h: BAND_H, fill: { color: C.primary }, line: { color: C.primary } })
+          sl.addText(slide.titre || 'Synthèse', { x: 0.4, y: 0.05, w: W - 0.8, h: BAND_H - 0.1, fontSize: 22, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle' })
+          let cy = BAND_H + 0.2
+          for (const item of (slide.contenu || [])) {
+            if (cy > H - 0.4) break
+            const val = String(item.valeur || '')
+            if (item.type === 'encart' || val.toLowerCase().startsWith('à retenir')) {
+              sl.addShape(prs.ShapeType.rect, { x: 0.5, y: cy, w: W - 1, h: 0.72, fill: { color: C.accent }, line: { color: C.accent } })
+              sl.addText('💡 ' + val.replace(/^à retenir\s*:?\s*/i, ''), { x: 0.65, y: cy + 0.06, w: W - 1.3, h: 0.6, fontSize: 12, color: C.white, bold: true, fontFace: 'Calibri', valign: 'middle', wrap: true })
+              cy += 0.86
+            } else if (item.type === 'tableau') {
+              const tRows = buildTableRows(val, C)
+              if (tRows.length > 0) {
+                const th = Math.min(tRows.length * 0.42, H - cy - 0.2)
+                sl.addTable(tRows, { x: 0.5, y: cy, w: W - 1, h: th, border: { color: 'E5E7EB', type: 'solid', pt: 1 } })
+                cy += th + 0.15
+              }
+            } else {
+              sl.addText(val, { x: 0.5, y: cy, w: W - 1, h: 0.5, fontSize: 13, color: C.text, fontFace: 'Calibri', wrap: true })
+              cy += 0.58
+            }
+          }
+
+        // ── CONTENU générique (contenu + remediation) ──────────────────
+        } else {
+          sl.background = { fill: 'FFFFFF' }
+          sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: W, h: BAND_H, fill: { color: C.primary }, line: { color: C.primary } })
+          sl.addText(slide.titre || '', { x: 0.4, y: 0.05, w: W - 0.8, h: BAND_H - 0.1, fontSize: 22, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle' })
+          let cy = BAND_H + 0.2
+          for (const item of (slide.contenu || [])) {
+            if (cy > H - 0.35) break
+            const val = String(item.valeur || '')
+            if (item.type === 'liste') {
+              const lines = val.split('\n').filter(l => l.trim())
+              const bullets = lines.map(l => ({ text: l.replace(/^[-•*]\s*/, ''), options: { bullet: { color: C.accent }, fontSize: 13, color: C.text, fontFace: 'Calibri' } }))
+              const bh = Math.min(lines.length * 0.44, H - cy - 0.2)
+              sl.addText(bullets, { x: 0.5, y: cy, w: W - 1, h: bh, fontFace: 'Calibri' })
+              cy += bh + 0.1
+            } else if (item.type === 'tableau') {
+              const tRows = buildTableRows(val, C)
+              if (tRows.length > 0) {
+                const th = Math.min(tRows.length * 0.42, H - cy - 0.2)
+                sl.addTable(tRows, { x: 0.5, y: cy, w: W - 1, h: th, border: { color: 'E5E7EB', type: 'solid', pt: 1 } })
+                cy += th + 0.15
+              }
+            } else if (item.type === 'encart') {
+              sl.addShape(prs.ShapeType.rect, { x: 0.5, y: cy, w: W - 1, h: 0.72, fill: { color: C.pale }, line: { color: C.accent, pt: 2 } })
+              sl.addText(val, { x: 0.65, y: cy + 0.06, w: W - 1.3, h: 0.6, fontSize: 12, color: C.text, fontFace: 'Calibri', valign: 'middle', wrap: true })
+              cy += 0.86
+            } else {
+              sl.addText(val, { x: 0.5, y: cy, w: W - 1, h: 0.5, fontSize: 13, color: C.text, fontFace: 'Calibri', wrap: true })
+              cy += 0.58
+            }
+          }
+        }
+      }
+
+      const parts = [
+        pptForm.chapitre?.replace(/[^a-zA-Z0-9]/g, '_'),
+        (pptForm.titre || 'Presentation').replace(/\s+/g, '_').slice(0, 25),
+        pptForm.niveau?.replace(/\s+/g, '_').slice(0, 15),
+      ].filter(Boolean)
+      await prs.writeFile({ fileName: parts.join('_') + '.pptx' })
+      toast.success('Fichier PowerPoint téléchargé !')
+    } catch (err) {
+      console.error('PPT generation error:', err)
+      toast.error('Erreur lors de la création du fichier PowerPoint.')
+    } finally {
+      setPptGenerating(false)
+    }
+  }
+
+  // Helpers PPT — parse texte tabulaire "Col1|Col2\nVal1|Val2" → pptxgenjs rows
+  function buildTableRows(val, C) {
+    return val.split('\n').filter(r => r.trim())
+      .map((r, ri) => r.split('|').filter(c => c.trim()).map(cell => ({
+        text: cell.trim(),
+        options: ri === 0
+          ? { fill: { color: C.primary }, color: C.white, bold: true, fontSize: 11, fontFace: 'Calibri', align: 'center' }
+          : { fill: { color: ri % 2 === 0 ? C.pale : 'FFFFFF' }, color: C.text, fontSize: 11, fontFace: 'Calibri' },
+      })))
+      .filter(r => r.length > 0)
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1132,8 +1304,32 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
             })}
           </div>
 
+          {/* Overlay génération PPTX */}
+          {pptGenerating && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl px-10 py-8 flex flex-col items-center gap-4 text-center">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: pptSelectedPalette.pale }}>
+                  <Loader2 size={32} className="animate-spin" style={{ color: pptSelectedPalette.primary }} />
+                </div>
+                <div>
+                  <div className="font-semibold text-gray-900 dark:text-white text-base">📊 Création du fichier PowerPoint...</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Génération de {pptResult?.slides?.length} slides en cours.</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Boutons actions */}
           <div className="flex flex-wrap gap-3">
+            {/* Télécharger le PPTX */}
+            <button
+              onClick={handleDownloadPPT}
+              disabled={pptGenerating}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-medium rounded-lg px-4 py-2.5 text-sm transition-colors"
+            >
+              <Presentation size={16} />
+              {pptGenerating ? 'Création...' : 'Télécharger le PPT'}
+            </button>
             <button onClick={handleDownloadPPTPDF}
               className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg px-4 py-2.5 text-sm transition-colors">
               <FileText size={16} /> Télécharger en PDF
