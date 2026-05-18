@@ -15,6 +15,7 @@ import ExercicesTab from '../features/classe/ExercicesTab'
 import EvaluationsTab from '../features/classe/EvaluationsTab'
 import CCFTab from '../features/classe/CCFTab'
 import ProgressionTab from '../features/classe/ProgressionTab'
+import ReferentielsTab from '../features/classe/ReferentielsTab'
 
 const TABS = [
   { key: 'ruban', label: '📚 Ruban pédagogique' },
@@ -23,13 +24,14 @@ const TABS = [
   { key: 'evaluations', label: '📝 Évaluations' },
   { key: 'ccf', label: '🎯 CCF' },
   { key: 'progression', label: '📊 Progression' },
+  { key: 'referentiels', label: '📖 Référentiels' },
 ]
 
 export default function ClasseFiche() {
   const { id } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { find, update, getAnneeActive, seancesCalendrier, rubanPedagogique } = useData()
+  const { find, update, getAnneeActive, seancesCalendrier, rubanPedagogique, anneesScolaires } = useData()
   const toast = useToast()
 
   const [tab, setTab] = useState(searchParams.get('tab') || 'ruban')
@@ -40,6 +42,13 @@ export default function ClasseFiche() {
   const classe = find('classes', id)
   const anneeActive = getAnneeActive()
   const anneeId = anneeActive?.id
+
+  // Détecter si l'année courante est archivée (dateFin passée)
+  const annees = anneesScolaires()
+  const anneeEnCours = annees.find(a => a.id === anneeId)
+  const isArchived = anneeEnCours?.dateFin
+    ? new Date() > new Date(anneeEnCours.dateFin)
+    : false
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -276,6 +285,13 @@ export default function ClasseFiche() {
           <ProgressionTab
             classe={classe}
             anneeId={anneeId}
+          />
+        )}
+        {tab === 'referentiels' && (
+          <ReferentielsTab
+            classe={classe}
+            anneeId={anneeId}
+            readOnly={isArchived}
           />
         )}
       </div>
