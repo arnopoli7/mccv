@@ -1,0 +1,11 @@
+{
+  "name": "MCCV - Mon Cahier de Cours Virtuel",
+  "short_name": "MCCV",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1E3A5F",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
