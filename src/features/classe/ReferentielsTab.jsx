@@ -34,6 +34,7 @@ export default function ReferentielsTab({ classe, anneeId, readOnly = false }) {
   const [editingId, setEditingId] = useState(null)
   const [editNom, setEditNom] = useState('')
   const [notes, setNotes] = useState(classe.notesReferentiel || '')
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   // Sync notes si classe change (ex: rechargement)
   useEffect(() => {
@@ -201,7 +202,7 @@ export default function ReferentielsTab({ classe, anneeId, readOnly = false }) {
                   )}
                   {!readOnly && (
                     <button
-                      onClick={() => removeDoc(doc.id)}
+                      onClick={() => setConfirmDeleteId(doc.id)}
                       className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 transition-colors"
                       title="Supprimer"
                     >
@@ -214,6 +215,33 @@ export default function ReferentielsTab({ classe, anneeId, readOnly = false }) {
           </div>
         </div>
       )}
+
+      {/* Confirmation suppression */}
+      {confirmDeleteId && (() => {
+        const doc = referentiels.find(d => d.id === confirmDeleteId)
+        return (
+          <div className="card p-4 border-red-200 dark:border-red-800 border-2 space-y-3">
+            <p className="text-sm font-medium text-red-700 dark:text-red-300">
+              Supprimer <span className="font-bold">"{doc?.nomCustom || doc?.name}"</span> ?
+              Cette action est irréversible.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { removeDoc(confirmDeleteId); setConfirmDeleteId(null) }}
+                className="btn-danger text-sm py-1.5"
+              >
+                Oui, supprimer
+              </button>
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="btn-secondary text-sm py-1.5"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Notes sur le référentiel */}
       <div className="card p-5">

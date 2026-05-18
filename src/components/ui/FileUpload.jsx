@@ -82,6 +82,34 @@ async function readFile(file) {
   return fileToBase64(file)
 }
 
+// ─── Confirmation inline ──────────────────────────────────────────────────────
+
+function DeleteConfirm({ onConfirm, onCancel }) {
+  return (
+    <div className="flex flex-col gap-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+      <p className="text-xs text-red-700 dark:text-red-300 font-medium">
+        Supprimer ce document ? Cette action est irréversible.
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="flex-1 text-xs py-1 px-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium transition-colors"
+        >
+          Oui, supprimer
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 text-xs py-1 px-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded font-medium transition-colors"
+        >
+          Annuler
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── FileUpload (fichier unique) ─────────────────────────────────────────────
 
 // storagePath ignoré (conservé pour compatibilité des appelants)
@@ -89,6 +117,7 @@ export default function FileUpload({ value, onChange, label = 'Déposer un fichi
   const toast = useToast()
   const inputRef = useRef()
   const [uploading, setUploading] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   async function handleFile(e) {
     const file = e.target.files?.[0]
@@ -115,7 +144,12 @@ export default function FileUpload({ value, onChange, label = 'Déposer un fichi
 
   return (
     <div>
-      {value ? (
+      {confirmDelete ? (
+        <DeleteConfirm
+          onConfirm={() => { onChange(null); setConfirmDelete(false) }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : value ? (
         <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
           <span className="text-xl shrink-0">{getFileIcon(value)}</span>
           <div className="flex-1 min-w-0">
@@ -135,7 +169,7 @@ export default function FileUpload({ value, onChange, label = 'Déposer un fichi
             )}
             <button
               type="button"
-              onClick={() => onChange(null)}
+              onClick={() => setConfirmDelete(true)}
               className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500"
               title="Supprimer"
             >
@@ -177,6 +211,7 @@ export function MultiFileUpload({ files = [], onAdd, onRemove, storagePath: _sp 
   const toast = useToast()
   const inputRef = useRef()
   const [uploading, setUploading] = useState(false)
+  const [confirmIdx, setConfirmIdx] = useState(null) // index en attente de suppression
 
   async function handleFile(e) {
     const file = e.target.files?.[0]
@@ -204,21 +239,35 @@ export function MultiFileUpload({ files = [], onAdd, onRemove, storagePath: _sp 
   return (
     <div className="space-y-2">
       {files.map((f, i) => (
-        <div key={i} className="flex items-center gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/60 rounded-lg border border-gray-100 dark:border-gray-700">
-          <span className="text-lg shrink-0">{getFileIcon(f)}</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-gray-700 dark:text-gray-200 truncate font-medium">{f.name}</p>
-            <p className="text-xs text-gray-400">{formatFileSize(f.size)}</p>
-          </div>
-          {f.data && (
-            <a href={f.data} download={f.name}
-              className="text-gray-400 hover:text-blue-500 shrink-0" title="Télécharger">
-              <Download size={14} />
-            </a>
+        <div key={i}>
+          {confirmIdx === i ? (
+            <DeleteConfirm
+              onConfirm={() => { onRemove(i); setConfirmIdx(null) }}
+              onCancel={() => setConfirmIdx(null)}
+            />
+          ) : (
+            <div className="flex items-center gap-2 p-2.5 bg-gray-50 dark:bg-gray-700/60 rounded-lg border border-gray-100 dark:border-gray-700">
+              <span className="text-lg shrink-0">{getFileIcon(f)}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-700 dark:text-gray-200 truncate font-medium">{f.name}</p>
+                <p className="text-xs text-gray-400">{formatFileSize(f.size)}</p>
+              </div>
+              {f.data && (
+                <a href={f.data} download={f.name}
+                  className="text-gray-400 hover:text-blue-500 shrink-0" title="Télécharger">
+                  <Download size={14} />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setConfirmIdx(i)}
+                className="text-red-400 hover:text-red-600 shrink-0"
+                title="Supprimer"
+              >
+                <X size={14} />
+              </button>
+            </div>
           )}
-          <button type="button" onClick={() => onRemove(i)} className="text-red-400 hover:text-red-600 shrink-0" title="Supprimer">
-            <X size={14} />
-          </button>
         </div>
       ))}
       {uploading ? (

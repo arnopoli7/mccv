@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Save, LogOut, Plus, Archive } from 'lucide-react'
+import { Save, LogOut, Plus, Archive, Trash2 } from 'lucide-react'
 import { reauthenticateWithCredential, updatePassword, EmailAuthProvider } from 'firebase/auth'
 import { auth, loginToEmail } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
@@ -14,10 +14,13 @@ import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 const ZONES = ['A', 'B', 'C']
 
+// Collections à nettoyer lors de la suppression d'une année (filtrées par anneeScolaireId)
+const YEAR_COLLECTIONS = ['vacances', 'emploiDuTemps', 'rubanPedagogique', 'seancesCalendrier', 'ccf', 'stages']
+
 export default function Parametres() {
   const navigate = useNavigate()
   const { getCurrentUser, logout, updateCurrentUserProfile } = useAuth()
-  const { getParams, setParams, anneesScolaires, add, update, remove } = useData()
+  const { getParams, setParams, anneesScolaires, add, update, remove, get, set } = useData()
   const { theme, setTheme } = useTheme()
   const toast = useToast()
 
@@ -40,6 +43,39 @@ export default function Parametres() {
 
   const [showLogout, setShowLogout] = useState(false)
 
+  // ── Suppression d'année ───────────────────────────────────────────────────
+  const [deleteStep, setDeleteStep] = useState(null)   // null | 1 | 2
+  const [deleteAnnee, setDeleteAnnee] = useState(null) // objet année à supprimer
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+
+  function openDeleteAnnee(annee) {
+    setDeleteAnnee(annee)
+    setDeleteConfirmText('')
+    setDeleteStep(1)
+  }
+  function closeDeleteAnnee() {
+    setDeleteStep(null)
+    setDeleteAnnee(null)
+    setDeleteConfirmText('')
+  }
+
+  function deleteYearDefinitely() {
+    if (!deleteAnnee || deleteConfirmText.trim() !== deleteAnnee.label) return
+    const anneeId = deleteAnnee.id
+
+    // Supprimer toutes les données liées à cette année dans chaque collection
+    YEAR_COLLECTIONS.forEach(col => {
+      const all = get(col)
+      set(col, all.filter(item => item.anneeScolaireId !== anneeId))
+    })
+    // Supprimer l'année elle-même
+    remove('anneesScolaires', anneeId)
+
+    toast.success(`Année ${deleteAnnee.label} supprimée définitivement.`)
+    closeDeleteAnnee()
+  }
+
+  // ── Profil ────────────────────────────────────────────────────────────────
   function saveProfil() {
     setParams({ enseignant: profil.enseignant, etablissement: profil.etablissement })
     if (user) updateCurrentUserProfile({ nom: profil.enseignant || user.nom, slogan: profil.slogan })
@@ -146,6 +182,13 @@ export default function Parametres() {
                   <span className="text-xs text-gray-400 flex items-center gap-1"><Archive size={11} /> Archivée</span>
                   <button onClick={() => setAnneeActive(a.id)} className="text-xs text-blue-500 hover:underline">
                     Activer
+                  </button>
+                  <button
+                    onClick={() => openDeleteAnnee(a)}
+                    className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                    title="Supprimer cette année"
+                  >
+                    <Trash2 size={12} /> Supprimer
                   </button>
                 </div>
               )}
@@ -269,6 +312,85 @@ export default function Parametres() {
         confirmLabel="Oui, quitter"
         danger
       />
+
+      {/* ── Suppression année — Étape 1 ── */}
+      <Modal
+        isOpen={deleteStep === 1}
+        onClose={closeDeleteAnnee}
+        title={`Supprimer l'année ${deleteAnnee?.label}`}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-300 mb-2">
+              ⚠️ Vous êtes sur le point de supprimer l'année <strong>{deleteAnnee?.label}</strong>.
+            </p>
+            <p className="text-sm text-red-600 dark:text-red-400">
+              Cette action supprimera <strong>TOUTES les données associées</strong> :
+              séances, ruban pédagogique, emploi du temps, CCF, stages, vacances…
+            </p>
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Êtes-vous sûr de vouloir continuer ?
+          </p>
+          <div className="flex justify-end gap-3">
+            <button className="btn-secondary" onClick={closeDeleteAnnee}>Annuler</button>
+            <button
+              className="btn-danger"
+              onClick={() => setDeleteStep(2)}
+            >
+              Oui, continuer
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Suppression année — Étape 2 ── */}
+      <Modal
+        isOpen={deleteStep === 2}
+        onClose={closeDeleteAnnee}
+        title="Dernière confirmation"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-red-50 dark:bg-red-900/20 border-2 border-red-400 dark:border-red-600 rounded-xl">
+            <p className="text-sm font-bold text-red-700 dark:text-red-300 uppercase tracking-wide mb-1">
+              🚨 DERNIÈRE CONFIRMATION — Action irréversible
+            </p>
+            <p className="text-sm text-red-600 dark:text-red-400">
+              Cette suppression est <strong>définitive</strong>. Aucune restauration possible.
+            </p>
+          </div>
+          <div>
+            <label className="label">
+              Tapez <strong className="text-red-600 dark:text-red-400">{deleteAnnee?.label}</strong> pour confirmer
+            </label>
+            <input
+              className="input border-red-300 dark:border-red-700 focus:ring-red-400"
+              placeholder={deleteAnnee?.label}
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              autoFocus
+              onKeyDown={e => {
+                if (e.key === 'Enter' && deleteConfirmText.trim() === deleteAnnee?.label) {
+                  deleteYearDefinitely()
+                }
+              }}
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button className="btn-secondary" onClick={closeDeleteAnnee}>Annuler</button>
+            <button
+              className="btn-danger"
+              disabled={deleteConfirmText.trim() !== deleteAnnee?.label}
+              onClick={deleteYearDefinitely}
+            >
+              <Trash2 size={15} className="inline mr-1" />
+              Supprimer définitivement
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
