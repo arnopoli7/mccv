@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Trash2, Edit2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
@@ -78,6 +78,21 @@ export default function EmploiDuTemps() {
   // ── Vue planning
   const [selectedPeriodeId, setSelectedPeriodeId] = useState(null)
   const [mobileDayIdx, setMobileDayIdx] = useState(0)
+
+  // ── Ligne "maintenant"
+  const [nowMin, setNowMin] = useState(() => {
+    const d = new Date()
+    return d.getHours() * 60 + d.getMinutes()
+  })
+  useEffect(() => {
+    const id = setInterval(() => {
+      const d = new Date()
+      setNowMin(d.getHours() * 60 + d.getMinutes())
+    }, 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const nowVisible = nowMin > GRID_START && nowMin < GRID_END
+  const nowTopPct = `${((nowMin - GRID_START) / GRID_TOTAL * 100).toFixed(3)}%`
 
   if (!anneeActive) {
     return (
@@ -353,7 +368,7 @@ export default function EmploiDuTemps() {
                   </div>
 
                   {/* Zone grille */}
-                  <div className="flex-1 relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                  <div className="flex-1 relative rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
 
                     {/* Fond pause déjeuner */}
                     <div
@@ -376,6 +391,17 @@ export default function EmploiDuTemps() {
                       style={{ top: topPct('12:20') }}
                     />
 
+                    {/* Ligne "maintenant" */}
+                    {nowVisible && (
+                      <div
+                        className="absolute inset-x-0 z-20 pointer-events-none flex items-center"
+                        style={{ top: nowTopPct }}
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow shrink-0 -ml-1.5" />
+                        <div className="flex-1 border-t-2 border-red-500" />
+                      </div>
+                    )}
+
                     {/* Colonnes jours */}
                     <div className="absolute inset-0 flex">
                       {JOURS.map((jour, ji) => {
@@ -393,39 +419,66 @@ export default function EmploiDuTemps() {
                               const endMin = timeToMin(cr.heureFin)
                               if (startMin >= endMin) return null
                               const slotMinutes = endMin - startMin
+
+                              // Taille de police et contenu adaptés à la durée
+                              const fontSize = slotMinutes >= 40 ? 11 : slotMinutes >= 20 ? 10 : 9
+                              const showTime = slotMinutes >= 18
+                              const showMat  = slotMinutes >= 38 && !!mat?.nom
+
                               return (
+                                // Wrapper externe : group + overflow visible pour le tooltip
                                 <div
                                   key={cr.id}
-                                  className="absolute inset-x-1 rounded-lg shadow-sm overflow-hidden cursor-pointer group z-20 transition-transform hover:scale-[1.01]"
+                                  className="absolute group"
                                   style={{
                                     top: topPct(cr.heureDebut),
                                     height: heightPct(cr.heureDebut, cr.heureFin),
-                                    backgroundColor: cl?.couleur || '#94a3b8',
+                                    left: 4, right: 4,
+                                    zIndex: 20,
                                   }}
                                 >
-                                  <div className="p-1.5 h-full flex flex-col text-white overflow-hidden">
-                                    <div className="font-bold text-xs leading-tight truncate">{cl?.nom || '?'}</div>
-                                    {slotMinutes >= 20 && (
-                                      <div className="text-xs opacity-80 leading-tight mt-0.5">{cr.heureDebut}–{cr.heureFin}</div>
-                                    )}
-                                    {slotMinutes >= 35 && mat?.nom && (
-                                      <div className="text-xs opacity-70 leading-tight truncate mt-auto">{mat.nom}</div>
-                                    )}
+                                  {/* Tooltip (au-dessus, hors overflow-hidden du slot) */}
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 bg-gray-900 dark:bg-gray-950 text-white text-xs rounded-xl p-2.5 shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 leading-relaxed whitespace-nowrap">
+                                    <div className="font-bold text-[12px]">{cl?.nom || '?'}</div>
+                                    <div className="opacity-75 mt-0.5">{cr.heureDebut} – {cr.heureFin}</div>
+                                    {mat?.nom && <div className="italic opacity-60 mt-0.5">{mat.nom}</div>}
                                   </div>
-                                  {/* Actions au survol */}
-                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 z-30">
-                                    <button
-                                      onClick={e => { e.stopPropagation(); openEditCreneau(selectedPeriode.id, cr) }}
-                                      className="p-1 bg-white rounded shadow text-gray-700 hover:text-blue-600"
-                                    >
-                                      <Edit2 size={11} />
-                                    </button>
-                                    <button
-                                      onClick={e => { e.stopPropagation(); deleteCreneau(selectedPeriode.id, cr.id) }}
-                                      className="p-1 bg-white rounded shadow text-red-500 hover:text-red-700"
-                                    >
-                                      <Trash2 size={11} />
-                                    </button>
+
+                                  {/* Créneau */}
+                                  <div
+                                    className="absolute inset-0 rounded-lg shadow-md overflow-hidden cursor-pointer transition-transform group-hover:scale-[1.02]"
+                                    style={{ backgroundColor: cl?.couleur || '#94a3b8', borderRadius: 8 }}
+                                  >
+                                    {/* Contenu texte */}
+                                    <div className="p-1.5 h-full flex flex-col text-white overflow-hidden" style={{ fontSize }}>
+                                      <div className="font-bold leading-tight truncate">{cl?.nom || '?'}</div>
+                                      {showTime && (
+                                        <div className="leading-tight mt-0.5 opacity-80" style={{ fontSize: fontSize - 1 }}>
+                                          {cr.heureDebut}–{cr.heureFin}
+                                        </div>
+                                      )}
+                                      {showMat && (
+                                        <div className="italic leading-tight mt-auto opacity-70 truncate" style={{ fontSize: fontSize - 1 }}>
+                                          {mat.nom}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Actions au survol */}
+                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 z-30">
+                                      <button
+                                        onClick={e => { e.stopPropagation(); openEditCreneau(selectedPeriode.id, cr) }}
+                                        className="p-1 bg-white rounded shadow text-gray-700 hover:text-blue-600"
+                                      >
+                                        <Edit2 size={11} />
+                                      </button>
+                                      <button
+                                        onClick={e => { e.stopPropagation(); deleteCreneau(selectedPeriode.id, cr.id) }}
+                                        className="p-1 bg-white rounded shadow text-red-500 hover:text-red-700"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               )
