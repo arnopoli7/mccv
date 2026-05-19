@@ -249,8 +249,32 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
     }
     if (!ruban || !anneeId) return
 
-    const periodes = get('emploiDuTemps').filter(p => p.anneeScolaireId === anneeId)
+    console.log('=== DÉBUT DÉPLOIEMENT ===')
+    console.log('Classe:', classe.id, classe.nom)
+    console.log('Matière:', currentMatiere?.id, currentMatiere?.nom)
+    console.log('Année scolaire:', anneeId)
+
+    const toutesSeances = sequences.flatMap(seq =>
+      (seq.seances || []).map(s => ({ ...s, sequenceId: seq.id }))
+    )
+    console.log('Séances du ruban:', toutesSeances.length, toutesSeances.map(s => s.titre))
+
+    const allEDT = get('emploiDuTemps')
+    const periodes = allEDT.filter(p => p.anneeScolaireId === anneeId)
+    console.log('Emploi du temps trouvé (toutes périodes):', periodes.length, periodes.map(p => ({ id: p.id, nom: p.nom, dateDebut: p.dateDebut, dateFin: p.dateFin, nbCreneaux: (p.creneaux || []).length })))
+
+    const allCreneaux = periodes.flatMap(p => p.creneaux || [])
+    console.log('Tous les créneaux de toutes les périodes:', allCreneaux.length, allCreneaux.map(c => ({ classeId: c.classeId, matiereId: c.matiereId, jour: c.jour })))
+    console.log('classeId attendu:', classe.id, '| matiereId attendu:', currentMatiere?.id || '(tous)')
+
+    const creneauxPourClasse = allCreneaux.filter(c => c.classeId === classe.id)
+    console.log('Créneaux pour cette classe:', creneauxPourClasse.length)
+    const creneauxPourClasseEtMatiere = creneauxPourClasse.filter(c => !currentMatiere?.id || c.matiereId === currentMatiere.id)
+    console.log('Créneaux pour cette classe+matière:', creneauxPourClasseEtMatiere.length)
+
     const vacancesList = get('vacances').filter(v => v.anneeScolaireId === anneeId)
+    console.log('Vacances:', vacancesList.length, vacancesList.map(v => ({ nom: v.nom, debut: v.dateDebut, fin: v.dateFin })))
+
     // Stages pour cette classe
     const stagesList = get('stages').filter(
       s => s.anneeScolaireId === anneeId &&
@@ -258,6 +282,7 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
     )
 
     if (periodes.length === 0) {
+      console.warn('ÉCHEC : Aucune période dans emploiDuTemps pour cette année.')
       toast.error("Aucune période configurée dans l'emploi du temps.")
       return
     }
@@ -268,13 +293,12 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
       )
     )
     if (!hasCreneaux) {
+      console.warn('ÉCHEC : Aucun créneau trouvé pour classeId=', classe.id, 'matiereId=', currentMatiere?.id)
+      console.warn('Créneaux existants dans l\'EDT:', allCreneaux)
       toast.error("Aucun créneau configuré pour cette classe dans l'emploi du temps.")
       return
     }
 
-    const toutesSeances = sequences.flatMap(seq =>
-      (seq.seances || []).map(s => ({ ...s, sequenceId: seq.id }))
-    )
     if (toutesSeances.length === 0) {
       toast.warning('Aucune séance dans le ruban.')
       return
@@ -292,6 +316,7 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
         c.classeId === classe.id &&
         (!currentMatiere?.id || c.matiereId === currentMatiere.id)
       )
+      console.log(`Période "${periode.nom}" (${periode.dateDebut} → ${periode.dateFin}) : ${creneaux.length} créneau(x) pour cette classe/matière`)
       if (creneaux.length === 0) continue
 
       let current = parseISO(periode.dateDebut)
@@ -339,7 +364,11 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
       }
     }
 
+    console.log('Dates disponibles (occurrences):', occurrences.length, occurrences.slice(0, 5).map(o => o.date + ' ' + o.heureDebut + '-' + o.heureFin))
+    console.log('Séances à déployer:', toutesSeances.length)
+
     if (occurrences.length === 0) {
+      console.warn('ÉCHEC : 0 occurrence générée. Vérifiez que les jours des créneaux correspondent aux dates des périodes, et que les vacances ne couvrent pas toute la période.')
       toast.error("Aucun créneau disponible (vérifiez les périodes, les vacances et les stages).")
       return
     }
@@ -367,6 +396,11 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
       })
     }
 
+    console.log('Séances créées:', newEvents.length, newEvents.slice(0, 3).map(e => ({ titre: e.titre, date: e.date, heureDebut: e.heureDebut })))
+    if (newEvents.length < toutesSeances.length) {
+      console.warn(`ATTENTION : ${toutesSeances.length - newEvents.length} séance(s) sans créneau disponible (pas assez d'occurrences dans l'EDT).`)
+    }
+
     // Écriture atomique Firestore : pose le verrou, supprime les anciennes séances
     // de cette classe/année, écrit les nouvelles, et attend la confirmation Firestore
     // avant de continuer — empêche toute race condition entre déploiements successifs.
@@ -378,6 +412,9 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
         sc => !(sc.classeId === classe.id && sc.anneeScolaireId === anneeId)
       )
       await setAndAwait('seancesCalendrier', [...keptCal, ...newEvents])
+      console.log('=== DÉPLOIEMENT TERMINÉ ===')
+      console.log('Total seancesCalendrier après déploiement:', keptCal.length + newEvents.length)
+      console.log('Nouvelles séances écrites:', newEvents.length)
 
       setShowDeployModal(false)
       setShowDeployConfirm(false)
