@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Trash2, Edit2 } from 'lucide-react'
+import { Plus, Trash2, Edit2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useData } from '../contexts/DataContext'
 import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/ui/Modal'
@@ -9,6 +9,33 @@ import { formatDate } from '../utils/dateUtils'
 import { getVacancesForZone } from '../utils/vacancesData'
 
 const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi']
+const JOURS_LABELS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi']
+
+// Heures de référence de l'établissement
+const GRID_HOURS = [
+  '08:20', '09:15', '10:10', '10:30', '11:25',
+  '12:20', '13:00', '13:55', '14:50', '15:05',
+  '16:00', '16:55', '17:50',
+]
+const GRID_START  = 8 * 60 + 20  // 500 min
+const GRID_END    = 18 * 60      // 1080 min
+const GRID_TOTAL  = GRID_END - GRID_START // 580 min
+const GRID_HEIGHT = 700 // px
+
+function timeToMin(t) {
+  if (!t) return GRID_START
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+function topPct(t) {
+  const m = Math.max(GRID_START, Math.min(GRID_END, timeToMin(t)))
+  return `${(((m - GRID_START) / GRID_TOTAL) * 100).toFixed(3)}%`
+}
+function heightPct(start, end) {
+  const s = Math.max(GRID_START, Math.min(GRID_END, timeToMin(start)))
+  const e = Math.max(GRID_START, Math.min(GRID_END, timeToMin(end)))
+  return `${(Math.max(0, e - s) / GRID_TOTAL * 100).toFixed(3)}%`
+}
 
 export default function EmploiDuTemps() {
   const { emploiDuTemps, vacances, stages, classes, getAnneeActive, add, update, remove, setParams, getParams } = useData()
@@ -34,7 +61,7 @@ export default function EmploiDuTemps() {
   const [showCreneauModal, setShowCreneauModal] = useState(false)
   const [editCreneau, setEditCreneau] = useState(null)
   const [creneauPeriodeId, setCreneauPeriodeId] = useState(null)
-  const [creneauForm, setCreneauForm] = useState({ classeId: '', matiereId: '', jour: 'lundi', heureDebut: '08:00', heureFin: '10:00' })
+  const [creneauForm, setCreneauForm] = useState({ classeId: '', matiereId: '', jour: 'lundi', heureDebut: '08:20', heureFin: '09:15' })
 
   // ── Vacances
   const [showVacModal, setShowVacModal] = useState(false)
@@ -48,6 +75,10 @@ export default function EmploiDuTemps() {
   const [stageForm, setStageForm] = useState({ nom: '', dateDebut: '', dateFin: '', classeIds: [] })
   const [deleteStage, setDeleteStage] = useState(null)
 
+  // ── Vue planning
+  const [selectedPeriodeId, setSelectedPeriodeId] = useState(null)
+  const [mobileDayIdx, setMobileDayIdx] = useState(0)
+
   if (!anneeActive) {
     return (
       <div className="card p-12 text-center max-w-lg mx-auto">
@@ -58,6 +89,8 @@ export default function EmploiDuTemps() {
       </div>
     )
   }
+
+  const selectedPeriode = periodes.find(p => p.id === selectedPeriodeId) ?? periodes[0]
 
   // ── PÉRIODES
   function openCreatePeriode() {
@@ -76,7 +109,9 @@ export default function EmploiDuTemps() {
       update('emploiDuTemps', editPeriode.id, periodeForm)
       toast.success('Période mise à jour.')
     } else {
-      add('emploiDuTemps', { id: genId('p'), anneeScolaireId: anneeId, creneaux: [], ...periodeForm })
+      const newId = genId('p')
+      add('emploiDuTemps', { id: newId, anneeScolaireId: anneeId, creneaux: [], ...periodeForm })
+      setSelectedPeriodeId(newId)
       toast.success(`Période "${periodeForm.nom}" créée.`)
     }
     setShowPeriodeModal(false)
@@ -90,9 +125,9 @@ export default function EmploiDuTemps() {
     setCreneauForm({
       classeId: defaultClasse?.id || '',
       matiereId: defaultClasse?.matieres?.[0]?.id || '',
-      jour: 'lundi',
-      heureDebut: '08:00',
-      heureFin: '10:00',
+      jour: JOURS[mobileDayIdx] || 'lundi',
+      heureDebut: '08:20',
+      heureFin: '09:15',
     })
     setShowCreneauModal(true)
   }
@@ -188,7 +223,7 @@ export default function EmploiDuTemps() {
   const getClasse = (id) => classList.find(c => c.id === id)
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Emploi du temps</h2>
@@ -198,7 +233,7 @@ export default function EmploiDuTemps() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1 overflow-x-auto">
-        {[['periodes', 'Périodes & créneaux'], ['vacances', 'Vacances scolaires'], ['stages', 'Périodes de stage']].map(([key, label]) => (
+        {[['periodes', 'Planning horaire'], ['vacances', 'Vacances scolaires'], ['stages', 'Périodes de stage']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -210,86 +245,207 @@ export default function EmploiDuTemps() {
         ))}
       </div>
 
-      {/* ── PÉRIODES ── */}
+      {/* ── PÉRIODES / PLANNING ── */}
       {tab === 'periodes' && (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <button onClick={openCreatePeriode} className="btn-primary flex items-center gap-2">
-              <Plus size={15} /> Nouvelle période
+          {/* Sélecteur de période + bouton créer */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex gap-1 flex-wrap flex-1">
+              {periodes.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setSelectedPeriodeId(p.id)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
+                    ${selectedPeriode?.id === p.id
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                >
+                  {p.nom}
+                </button>
+              ))}
+            </div>
+            <button onClick={openCreatePeriode} className="btn-primary flex items-center gap-1 text-sm shrink-0">
+              <Plus size={14} /> Nouvelle période
             </button>
           </div>
 
           {periodes.length === 0 && (
             <div className="card p-10 text-center text-gray-400">
-              Aucune période. Créez une période (ex: Période 1 — Trimestre 1).
+              Aucune période. Créez une période (ex&nbsp;: Période 1 — Trimestre 1).
             </div>
           )}
 
-          {periodes.map(p => (
-            <div key={p.id} className="card p-5">
-              <div className="flex items-center justify-between mb-4">
+          {selectedPeriode && (
+            <div className="card overflow-hidden">
+              {/* En-tête de la période sélectionnée */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
                 <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">{p.nom}</h3>
-                  <p className="text-sm text-gray-400">{formatDate(p.dateDebut)} → {formatDate(p.dateFin)}</p>
+                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">{selectedPeriode.nom}</h3>
+                  <p className="text-xs text-gray-400">
+                    {formatDate(selectedPeriode.dateDebut)} → {formatDate(selectedPeriode.dateFin)}
+                  </p>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => openEditPeriode(p)} className="p-1.5 btn-secondary text-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openAddCreneau(selectedPeriode.id)}
+                    className="btn-secondary text-xs flex items-center gap-1 py-1.5"
+                  >
+                    <Plus size={13} /> Ajouter un créneau
+                  </button>
+                  <button onClick={() => openEditPeriode(selectedPeriode)} className="p-1.5 btn-secondary text-xs">
                     <Edit2 size={13} />
                   </button>
-                  <button onClick={() => setDeletePeriode(p)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400">
+                  <button
+                    onClick={() => setDeletePeriode(selectedPeriode)}
+                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-400"
+                  >
                     <Trash2 size={13} />
                   </button>
                 </div>
               </div>
 
-              {/* Grille créneaux */}
-              {p.creneaux?.length > 0 ? (
-                <div className="overflow-x-auto mb-3">
-                <div className="grid grid-cols-5 gap-2" style={{ minWidth: 360 }}>
-                  {JOURS.map(jour => {
-                    const crs = (p.creneaux || []).filter(c => c.jour === jour)
-                    return (
-                      <div key={jour} className="space-y-1">
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 capitalize text-center">{jour}</p>
-                        {crs.map(cr => {
-                          const cl = getClasse(cr.classeId)
-                          return (
-                            <div
-                              key={cr.id}
-                              className="relative group rounded-lg p-1.5 text-center text-xs font-medium cursor-pointer"
-                              style={{ backgroundColor: cl?.couleur || '#e2e8f0' }}
-                            >
-                              <div className="truncate">{cl?.nom || '?'}</div>
-                              <div className="text-gray-600">{cr.heureDebut}–{cr.heureFin}</div>
-                              <div className="truncate opacity-70 mt-0.5" style={{ fontSize: 9 }}>
-                                {cl?.matieres?.find(m => m.id === cr.matiereId)?.nom || 'Non définie'}
-                              </div>
-                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1
-                                bg-black/20 rounded-lg transition-opacity">
-                                <button onClick={() => openEditCreneau(p.id, cr)} className="p-0.5 bg-white rounded">
-                                  <Edit2 size={10} />
-                                </button>
-                                <button onClick={() => deleteCreneau(p.id, cr.id)} className="p-0.5 bg-white rounded text-red-500">
-                                  <Trash2 size={10} />
-                                </button>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })}
+              <div className="p-4">
+                {/* Navigation mobile (1 jour à la fois) */}
+                <div className="flex items-center justify-between mb-3 md:hidden">
+                  <button
+                    onClick={() => setMobileDayIdx(i => Math.max(0, i - 1))}
+                    disabled={mobileDayIdx === 0}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-300"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <span className="font-semibold capitalize text-gray-800 dark:text-gray-100">
+                    {JOURS_LABELS[mobileDayIdx]}
+                  </span>
+                  <button
+                    onClick={() => setMobileDayIdx(i => Math.min(4, i + 1))}
+                    disabled={mobileDayIdx === 4}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-300"
+                  >
+                    <ChevronRight size={20} />
+                  </button>
                 </div>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 mb-3">Aucun créneau.</p>
-              )}
 
-              <button onClick={() => openAddCreneau(p.id)} className="text-sm text-blue-500 hover:text-blue-700 flex items-center gap-1">
-                <Plus size={13} /> Ajouter un créneau
-              </button>
+                {/* En-têtes jours — desktop uniquement */}
+                <div className="hidden md:flex mb-1">
+                  <div className="shrink-0" style={{ width: 56 }} />
+                  {JOURS_LABELS.map(j => (
+                    <div key={j} className="flex-1 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 py-1 uppercase tracking-wide">
+                      {j}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Grille horaire */}
+                <div className="flex" style={{ height: GRID_HEIGHT }}>
+
+                  {/* Axe des heures */}
+                  <div className="shrink-0 relative" style={{ width: 56 }}>
+                    {GRID_HOURS.map(h => (
+                      <div
+                        key={h}
+                        className="absolute right-2 text-xs text-gray-400 dark:text-gray-500 leading-none select-none"
+                        style={{ top: topPct(h), transform: 'translateY(-50%)' }}
+                      >
+                        {h}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Zone grille */}
+                  <div className="flex-1 relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+
+                    {/* Fond pause déjeuner */}
+                    <div
+                      className="absolute inset-x-0 bg-amber-50 dark:bg-amber-900/10 z-0 pointer-events-none"
+                      style={{ top: topPct('12:20'), height: heightPct('12:20', '13:00') }}
+                    />
+
+                    {/* Lignes en pointillés pour chaque heure */}
+                    {GRID_HOURS.filter(h => h !== '12:20').map(h => (
+                      <div
+                        key={h}
+                        className="absolute inset-x-0 border-t border-dashed border-gray-200 dark:border-gray-600 z-0 pointer-events-none"
+                        style={{ top: topPct(h) }}
+                      />
+                    ))}
+
+                    {/* Ligne pleine à midi */}
+                    <div
+                      className="absolute inset-x-0 border-t-2 border-amber-300 dark:border-amber-600 z-10 pointer-events-none"
+                      style={{ top: topPct('12:20') }}
+                    />
+
+                    {/* Colonnes jours */}
+                    <div className="absolute inset-0 flex">
+                      {JOURS.map((jour, ji) => {
+                        const crs = (selectedPeriode.creneaux || []).filter(c => c.jour === jour)
+                        return (
+                          <div
+                            key={jour}
+                            className={`relative flex-1 border-l border-gray-200 dark:border-gray-700 first:border-l-0
+                              ${ji !== mobileDayIdx ? 'hidden md:block' : 'block'}`}
+                          >
+                            {crs.map(cr => {
+                              const cl = getClasse(cr.classeId)
+                              const mat = cl?.matieres?.find(m => m.id === cr.matiereId)
+                              const startMin = timeToMin(cr.heureDebut)
+                              const endMin = timeToMin(cr.heureFin)
+                              if (startMin >= endMin) return null
+                              const slotMinutes = endMin - startMin
+                              return (
+                                <div
+                                  key={cr.id}
+                                  className="absolute inset-x-1 rounded-lg shadow-sm overflow-hidden cursor-pointer group z-20 transition-transform hover:scale-[1.01]"
+                                  style={{
+                                    top: topPct(cr.heureDebut),
+                                    height: heightPct(cr.heureDebut, cr.heureFin),
+                                    backgroundColor: cl?.couleur || '#94a3b8',
+                                  }}
+                                >
+                                  <div className="p-1.5 h-full flex flex-col text-white overflow-hidden">
+                                    <div className="font-bold text-xs leading-tight truncate">{cl?.nom || '?'}</div>
+                                    {slotMinutes >= 20 && (
+                                      <div className="text-xs opacity-80 leading-tight mt-0.5">{cr.heureDebut}–{cr.heureFin}</div>
+                                    )}
+                                    {slotMinutes >= 35 && mat?.nom && (
+                                      <div className="text-xs opacity-70 leading-tight truncate mt-auto">{mat.nom}</div>
+                                    )}
+                                  </div>
+                                  {/* Actions au survol */}
+                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 z-30">
+                                    <button
+                                      onClick={e => { e.stopPropagation(); openEditCreneau(selectedPeriode.id, cr) }}
+                                      className="p-1 bg-white rounded shadow text-gray-700 hover:text-blue-600"
+                                    >
+                                      <Edit2 size={11} />
+                                    </button>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); deleteCreneau(selectedPeriode.id, cr.id) }}
+                                      className="p-1 bg-white rounded shadow text-red-500 hover:text-red-700"
+                                    >
+                                      <Trash2 size={11} />
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Légende */}
+                {(selectedPeriode.creneaux || []).length === 0 && (
+                  <p className="text-sm text-gray-400 text-center mt-4">
+                    Aucun créneau. Cliquez sur « Ajouter un créneau » pour commencer.
+                  </p>
+                )}
+              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -359,7 +515,7 @@ export default function EmploiDuTemps() {
 
           {stagesList.length === 0 && (
             <div className="card p-10 text-center text-gray-400">
-              Aucune période de stage. Créez une période (ex: Stage S1).
+              Aucune période de stage. Créez une période (ex : Stage S1).
             </div>
           )}
 
@@ -480,13 +636,17 @@ export default function EmploiDuTemps() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Heure début</label>
-              <input type="time" className="input" value={creneauForm.heureDebut}
-                onChange={e => setCreneauForm(f => ({ ...f, heureDebut: e.target.value }))} />
+              <select className="input" value={creneauForm.heureDebut}
+                onChange={e => setCreneauForm(f => ({ ...f, heureDebut: e.target.value }))}>
+                {GRID_HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
             </div>
             <div>
               <label className="label">Heure fin</label>
-              <input type="time" className="input" value={creneauForm.heureFin}
-                onChange={e => setCreneauForm(f => ({ ...f, heureFin: e.target.value }))} />
+              <select className="input" value={creneauForm.heureFin}
+                onChange={e => setCreneauForm(f => ({ ...f, heureFin: e.target.value }))}>
+                {[...GRID_HOURS, '18:00'].map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
             </div>
           </div>
           <div className="flex justify-end gap-3">
@@ -576,7 +736,7 @@ export default function EmploiDuTemps() {
 
       {/* Confirms */}
       <ConfirmDialog isOpen={!!deletePeriode} onClose={() => setDeletePeriode(null)}
-        onConfirm={() => { remove('emploiDuTemps', deletePeriode.id); toast.info('Période supprimée.') }}
+        onConfirm={() => { remove('emploiDuTemps', deletePeriode.id); setSelectedPeriodeId(null); toast.info('Période supprimée.') }}
         title="Supprimer la période" message={`Supprimer "${deletePeriode?.nom}" et tous ses créneaux ?`}
         confirmLabel="Supprimer" danger />
       <ConfirmDialog isOpen={!!deleteVac} onClose={() => setDeleteVac(null)}
