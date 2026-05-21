@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Printer, Star } from 'lucide-react'
+import { Printer, Star, ClipboardList } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { formatDate, parseISO, isInVacances, toISODate } from '../../utils/dateUtils'
 import { eachWeekOfInterval, startOfWeek, endOfWeek, isBefore, isAfter, isSameDay, addDays, differenceInWeeks } from 'date-fns'
+import BulletinConseil from './BulletinConseil'
 
 // ── Donut SVG ─────────────────────────────────────────────────────────────────
 function DonutChart({ faites, retard, aFaire, total }) {
@@ -125,6 +126,9 @@ export default function ProgressionTab({ classe, anneeId }) {
   const { seancesCalendrier, rubanPedagogique, vacances, ccf, anneesScolaires, emploiDuTemps, getParams } = useData()
   const { getCurrentUser } = useAuth()
   const [tooltipInfo, setTooltipInfo] = useState(null) // { seances, seqTitre, key }
+  const [showBulletin, setShowBulletin] = useState(false)
+
+  const isArnaud7 = user?.login === 'Arnaud7'
 
   const user = getCurrentUser()
   const params = getParams()
@@ -343,9 +347,19 @@ export default function ProgressionTab({ classe, anneeId }) {
       <div className="card p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-800 dark:text-gray-100">Bilan de l'année</h3>
-          <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 text-sm py-1.5 no-print">
-            <Printer size={14} /> Imprimer
-          </button>
+          <div className="flex items-center gap-2 no-print">
+            {isArnaud7 && (
+              <button
+                onClick={() => setShowBulletin(true)}
+                className="flex items-center gap-1.5 btn-secondary text-sm py-1.5 text-purple-600 dark:text-purple-400 hover:text-purple-700"
+              >
+                <ClipboardList size={14} /> Bulletin conseil de classe
+              </button>
+            )}
+            <button onClick={() => window.print()} className="btn-secondary flex items-center gap-2 text-sm py-1.5">
+              <Printer size={14} /> Imprimer
+            </button>
+          </div>
         </div>
 
         {/* Print header */}
@@ -693,6 +707,16 @@ export default function ProgressionTab({ classe, anneeId }) {
           </div>
         )}
       </div>
+
+      {/* Modal Bulletin conseil de classe — Arnaud7 uniquement */}
+      {isArnaud7 && (
+        <BulletinConseil
+          classe={classe}
+          anneeId={anneeId}
+          isOpen={showBulletin}
+          onClose={() => setShowBulletin(false)}
+        />
+      )}
     </div>
   )
 }

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Edit2, Tag } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Edit2, Tag, BookOpen } from 'lucide-react'
 import { useData } from '../contexts/DataContext'
+import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/ui/Modal'
 import FileUpload from '../components/ui/FileUpload'
@@ -16,8 +17,10 @@ import EvaluationsTab from '../features/classe/EvaluationsTab'
 import CCFTab from '../features/classe/CCFTab'
 import ProgressionTab from '../features/classe/ProgressionTab'
 import ReferentielsTab from '../features/classe/ReferentielsTab'
+import CahierDeTexte from '../features/classe/CahierDeTexte'
+import AssistantIA from '../features/classe/AssistantIA'
 
-const TABS = [
+const BASE_TABS = [
   { key: 'ruban', label: '📚 Ruban pédagogique' },
   { key: 'seances', label: '📅 Séances' },
   { key: 'exercices', label: '✏️ Exercices' },
@@ -26,19 +29,26 @@ const TABS = [
   { key: 'progression', label: '📊 Progression' },
   { key: 'referentiels', label: '📖 Référentiels' },
 ]
+const TAB_IA = { key: 'ia', label: '🤖 Assistant IA' }
 
 export default function ClasseFiche() {
   const { id } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const { find, update, getAnneeActive, seancesCalendrier, rubanPedagogique, anneesScolaires } = useData()
+  const { getCurrentUser } = useAuth()
   const toast = useToast()
+
+  const user = getCurrentUser()
+  const isArnaud7 = user?.login === 'Arnaud7'
+  const TABS = isArnaud7 ? [...BASE_TABS, TAB_IA] : BASE_TABS
 
   const [tab, setTab] = useState(searchParams.get('tab') || 'ruban')
   const [showMatiereModal, setShowMatiereModal] = useState(false)
   const [matiereNom, setMatiereNom] = useState('')
   const [selectedMatiere, setSelectedMatiere] = useState(null)
   const [autoDeploy, setAutoDeploy] = useState(false)
+  const [showCahier, setShowCahier] = useState(false)
 
   const classe = find('classes', id)
   const anneeActive = getAnneeActive()
@@ -139,6 +149,14 @@ export default function ClasseFiche() {
                 {classe.nom[0]}
               </div>
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">{classe.nom}</h1>
+              {isArnaud7 && (
+                <button
+                  onClick={() => setShowCahier(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900/40 transition-colors no-print"
+                >
+                  <BookOpen size={14} /> Cahier de texte
+                </button>
+              )}
             </div>
 
             {/* Matières */}
@@ -311,7 +329,23 @@ export default function ClasseFiche() {
             readOnly={isArchived}
           />
         )}
+        {tab === 'ia' && isArnaud7 && (
+          <AssistantIA
+            classe={classe}
+            anneeId={anneeId}
+          />
+        )}
       </div>
+
+      {/* Modal Cahier de texte — Arnaud7 uniquement */}
+      {isArnaud7 && (
+        <CahierDeTexte
+          classe={classe}
+          anneeId={anneeId}
+          isOpen={showCahier}
+          onClose={() => setShowCahier(false)}
+        />
+      )}
 
       {/* Modal ajout matière */}
       <Modal isOpen={showMatiereModal} onClose={() => setShowMatiereModal(false)} title="Ajouter une matière" size="sm">
