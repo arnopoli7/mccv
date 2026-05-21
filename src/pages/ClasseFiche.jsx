@@ -18,7 +18,6 @@ import CCFTab from '../features/classe/CCFTab'
 import ProgressionTab from '../features/classe/ProgressionTab'
 import ReferentielsTab from '../features/classe/ReferentielsTab'
 import CahierDeTexte from '../features/classe/CahierDeTexte'
-import AssistantIA from '../features/classe/AssistantIA'
 
 const BASE_TABS = [
   { key: 'ruban', label: '📚 Ruban pédagogique' },
@@ -29,7 +28,6 @@ const BASE_TABS = [
   { key: 'progression', label: '📊 Progression' },
   { key: 'referentiels', label: '📖 Référentiels' },
 ]
-const TAB_IA = { key: 'ia', label: '🤖 Assistant IA' }
 
 export default function ClasseFiche() {
   const { id } = useParams()
@@ -41,7 +39,7 @@ export default function ClasseFiche() {
 
   const user = getCurrentUser()
   const isArnaud7 = user?.login === 'Arnaud7'
-  const TABS = isArnaud7 ? [...BASE_TABS, TAB_IA] : BASE_TABS
+  const TABS = BASE_TABS
 
   const [tab, setTab] = useState(searchParams.get('tab') || 'ruban')
   const [showMatiereModal, setShowMatiereModal] = useState(false)
@@ -327,12 +325,6 @@ export default function ClasseFiche() {
             classe={classe}
             anneeId={anneeId}
             readOnly={isArchived}
-          />
-        )}
-        {tab === 'ia' && isArnaud7 && (
-          <AssistantIA
-            classe={classe}
-            anneeId={anneeId}
           />
         )}
       </div>

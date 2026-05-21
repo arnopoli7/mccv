@@ -10,6 +10,7 @@ import { useData } from '../contexts/DataContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { genId } from '../utils/id'
+import AssistantIA from '../features/classe/AssistantIA'
 
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || ''
 const API_URL = import.meta.env.DEV
@@ -63,11 +64,15 @@ function buildSequences(rawSequences) {
 
 export default function Generateur() {
   const { get, add, update, getAnneeActive } = useData()
-  const { isAdmin } = useAuth()
+  const { isAdmin, getCurrentUser } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
-  const [selected, setSelected] = useState(null) // null | 'ruban' | 'ppt'
+  const user = getCurrentUser()
+  const isArnaud7 = user?.login === 'Arnaud7'
+
+  const [selected, setSelected] = useState(null) // null | 'ruban' | 'ppt' | 'ia'
+  const [iaClasseId, setIaClasseId] = useState('')
 
   // ── Ruban states ──────────────────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -924,7 +929,95 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
               </div>
             </button>
           )}
+
+          {/* Assistant IA — Arnaud7 uniquement */}
+          {isArnaud7 && (
+            <button
+              onClick={() => { setIaClasseId(''); setSelected('ia') }}
+              className="group flex flex-col items-start gap-3 p-5 rounded-xl border-2 border-gray-200
+                dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-green-400
+                dark:hover:border-green-500 hover:shadow-md transition-all text-left"
+            >
+              <div className="w-12 h-12 rounded-xl bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+                <span className="text-2xl">🤖</span>
+              </div>
+              <div>
+                <div className="font-semibold text-gray-900 dark:text-white group-hover:text-green-600
+                  dark:group-hover:text-green-400 transition-colors">
+                  Assistant IA
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Chat pédagogique contextualisé par classe — évaluations, TD, objectifs, progression
+                </div>
+              </div>
+            </button>
+          )}
         </div>
+      </div>
+    )
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RENDER — Assistant IA
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (selected === 'ia') {
+    const iaClasse = classes.find(c => c.id === iaClasseId) || null
+    const anneeActive = getAnneeActive()
+
+    return (
+      <div className="p-6 max-w-4xl">
+        {/* En-tête */}
+        <div className="flex items-center gap-3 mb-6">
+          <button
+            onClick={() => setSelected(null)}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+          >
+            ← Retour
+          </button>
+          <span className="text-gray-300 dark:text-gray-600">/</span>
+          <h2 className="font-semibold text-gray-800 dark:text-gray-100">
+            🤖 Assistant IA
+          </h2>
+        </div>
+
+        {/* Sélecteur de classe */}
+        <div className="card p-4 mb-4">
+          <label className="label mb-1">Classe (contexte de la conversation)</label>
+          <select
+            className="input"
+            value={iaClasseId}
+            onChange={e => setIaClasseId(e.target.value)}
+          >
+            <option value="">— Choisir une classe —</option>
+            {classes.map(c => (
+              <option key={c.id} value={c.id}>{c.nom}</option>
+            ))}
+          </select>
+          {iaClasse && (
+            <p className="text-xs text-gray-400 mt-1.5">
+              Contexte chargé : <strong className="text-gray-600 dark:text-gray-300">{iaClasse.nom}</strong>
+              {iaClasse.matieres?.length > 0 && ` · ${iaClasse.matieres.map(m => m.nom).join(', ')}`}
+            </p>
+          )}
+        </div>
+
+        {/* Chat — monté uniquement quand une classe est sélectionnée */}
+        {iaClasse && anneeActive ? (
+          <AssistantIA
+            key={iaClasse.id}
+            classe={iaClasse}
+            anneeId={anneeActive.id}
+          />
+        ) : (
+          <div className="card p-10 flex flex-col items-center justify-center gap-3 text-gray-400 text-sm">
+            <span className="text-4xl">🤖</span>
+            <p>Sélectionnez une classe pour démarrer la conversation.</p>
+            <p className="text-xs text-gray-300 dark:text-gray-600">
+              L'assistant chargera automatiquement les séquences, la progression et les notes de la classe choisie.
+            </p>
+          </div>
+        )}
       </div>
     )
   }
