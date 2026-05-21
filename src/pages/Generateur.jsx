@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
+import PptxGenJS from 'pptxgenjs'
 import {
   Sparkles, BookOpen, Loader2, RefreshCw, Check, X,
   ChevronDown, ChevronRight, AlertTriangle, Download,
@@ -512,7 +513,6 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
     if (!pptResult || pptGenerating) return
     setPptGenerating(true)
     try {
-      const { default: PptxGenJS } = await import('pptxgenjs')
       const prs = new PptxGenJS()
       prs.layout = 'LAYOUT_16x9' // 10" × 5.625" = 25.4cm × 14.29cm
 
