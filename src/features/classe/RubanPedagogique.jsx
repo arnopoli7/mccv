@@ -227,7 +227,12 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
 
   // ── Déploiement sur calendrier
   function openDeployModal() {
-    if (!ruban) return
+    console.log('=== BOUTON DÉPLOYER CLIQUÉ ===', { ruban: ruban?.id || null, anneeId, classeId: classe.id, matiereId: currentMatiere?.id })
+    if (!ruban) {
+      console.error('openDeployModal : ruban est null — le bouton devrait être désactivé')
+      toast.error("Aucun ruban pédagogique. Créez d'abord une séquence.")
+      return
+    }
     const seanceRubanIds = sequences.flatMap(seq => (seq.seances || []).map(s => s.id))
     const existing = get('seancesCalendrier').filter(
       sc => sc.classeId === classe.id &&
@@ -242,12 +247,23 @@ export default function RubanPedagogique({ classe, anneeId, currentMatiere, auto
   }
 
   async function deployerSurCalendrier() {
+    console.log('=== CLIC DÉPLOYER ===', { classeId: classe.id, matiereId: currentMatiere?.id, anneeScolaireId: anneeId })
+
     // Verrou : empêche tout déploiement concurrent
     if (isDeployingRef.current) {
       toast.warning('Un déploiement est déjà en cours, veuillez patienter.')
       return
     }
-    if (!ruban || !anneeId) return
+    if (!ruban) {
+      console.error('ÉCHEC : ruban est null — aucun ruban pédagogique trouvé pour classeId=', classe.id, 'matiereId=', currentMatiere?.id, 'anneeId=', anneeId)
+      toast.error("Aucun ruban pédagogique trouvé. Créez d'abord une séquence.")
+      return
+    }
+    if (!anneeId) {
+      console.error('ÉCHEC : anneeId est undefined')
+      toast.error("Année scolaire non définie. Vérifiez les paramètres.")
+      return
+    }
 
     console.log('=== DÉBUT DÉPLOIEMENT ===')
     console.log('Classe:', classe.id, classe.nom)
