@@ -1,10 +1,13 @@
 {
   "name": "MCCV - Mon Cahier de Cours Virtuel",
   "short_name": "MCCV",
+  "description": "Mon Cahier de Cours Virtuel - Gestion pédagogique pour enseignants",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "orientation": "any",
+  "background_color": "#1E3A5F",
   "theme_color": "#1E3A5F",
+  "lang": "fr",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]

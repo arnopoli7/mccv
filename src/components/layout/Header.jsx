@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Search, Sun, Moon, ChevronDown, Archive } from 'lucide-react'
+import { Search, Sun, Moon, ChevronDown, Archive, Smartphone } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useData } from '../../contexts/DataContext'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -24,8 +24,28 @@ export default function Header({ sidebarWidth }) {
   const [searchResults, setSearchResults] = useState([])
   const [showSearch, setShowSearch] = useState(false)
   const [showYearPicker, setShowYearPicker] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState(null)
   const searchRef = useRef()
   const yearRef = useRef()
+
+  // Capture l'événement beforeinstallprompt pour le bouton PWA
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    window.addEventListener('appinstalled', () => setInstallPrompt(null))
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler)
+    }
+  }, [])
+
+  function handleInstall() {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    installPrompt.userChoice.then(() => setInstallPrompt(null))
+  }
 
   const user = getCurrentUser()
   const annees = anneesScolaires()
@@ -193,6 +213,20 @@ export default function Header({ sidebarWidth }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* Bouton installation PWA */}
+      {installPrompt && (
+        <button
+          onClick={handleInstall}
+          className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400
+            bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700
+            px-2.5 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+          title="Installer l'application sur cet écran"
+        >
+          <Smartphone size={13} />
+          Installer
+        </button>
       )}
 
       {/* Toggle thème */}

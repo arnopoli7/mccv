@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Save, LogOut, Plus, Archive, Trash2 } from 'lucide-react'
+import { Save, LogOut, Plus, Archive, Trash2, RefreshCw, Loader2 } from 'lucide-react'
 import { reauthenticateWithCredential, updatePassword, EmailAuthProvider } from 'firebase/auth'
 import { auth, loginToEmail } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
@@ -11,6 +11,15 @@ import { getVacancesForZone } from '../utils/vacancesData'
 import { genId } from '../utils/id'
 import Modal from '../components/ui/Modal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import {
+  isConnected as gcalIsConnected,
+  isAutoSyncEnabled,
+  setAutoSync,
+  requestToken,
+  clearToken,
+  syncSeances,
+  ensureCalendar,
+} from '../services/googleCalendar'
 
 const ZONES = ['A', 'B', 'C']
 
@@ -42,6 +51,72 @@ export default function Parametres() {
   const [newAnnee, setNewAnnee] = useState({ label: '', dateDebut: '', dateFin: '' })
 
   const [showLogout, setShowLogout] = useState(false)
+
+  // ── Google Agenda ─────────────────────────────────────────────────────────
+  const [gcalConnected, setGcalConnected] = useState(gcalIsConnected)
+  const [gcalAutoSync, setGcalAutoSync] = useState(isAutoSyncEnabled)
+  const [gcalLoading, setGcalLoading] = useState(false)
+  const [gcalSyncing, setGcalSyncing] = useState(false)
+  const [gcalProgress, setGcalProgress] = useState(0)
+  const [gcalLastSync, setGcalLastSync] = useState(() => localStorage.getItem('mccv_gcal_last_sync'))
+
+  useEffect(() => {
+    const script = document.getElementById('google-gsi')
+    if (!script) {
+      const s = document.createElement('script')
+      s.id = 'google-gsi'
+      s.src = 'https://accounts.google.com/gsi/client'
+      s.async = true
+      document.head.appendChild(s)
+    }
+  }, [])
+
+  async function handleGcalConnect() {
+    setGcalLoading(true)
+    try {
+      await requestToken()
+      setGcalConnected(true)
+      toast.success('Connecte a Google Agenda.')
+    } catch (err) {
+      toast.error(err.message || 'Connexion Google echouee.')
+    } finally {
+      setGcalLoading(false)
+    }
+  }
+
+  function handleGcalDisconnect() {
+    clearToken()
+    setGcalConnected(false)
+    setGcalAutoSync(false)
+    toast.info('Deconnecte de Google Agenda.')
+  }
+
+  function handleAutoSyncToggle(enabled) {
+    setAutoSync(enabled)
+    setGcalAutoSync(enabled)
+    toast.info(enabled ? 'Synchronisation automatique activee.' : 'Synchronisation automatique desactivee.')
+  }
+
+  async function handleGcalSync() {
+    if (!gcalConnected) { toast.error('Connectez-vous d\'abord a Google Agenda.'); return }
+    setGcalSyncing(true)
+    setGcalProgress(0)
+    try {
+      const seances = get('seancesCalendrier')
+      const classes = get('classes')
+      const etablissement = params.etablissement || ''
+      const results = await syncSeances(seances, classes, etablissement, setGcalProgress)
+      const now = new Date().toLocaleString('fr-FR')
+      localStorage.setItem('mccv_gcal_last_sync', now)
+      setGcalLastSync(now)
+      toast.success(`Synchronisation terminee : ${results.created} crees, ${results.updated} mis a jour${results.errors > 0 ? `, ${results.errors} erreurs` : ''}.`)
+    } catch (err) {
+      toast.error(err.message || 'Erreur de synchronisation.')
+      if (err.message?.includes('expire')) setGcalConnected(false)
+    } finally {
+      setGcalSyncing(false)
+    }
+  }
 
   // ── Suppression d'année ───────────────────────────────────────────────────
   const [deleteStep, setDeleteStep] = useState(null)   // null | 1 | 2
@@ -261,6 +336,100 @@ export default function Parametres() {
         <button onClick={savePwd} disabled={pwdLoading} className="btn-primary flex items-center gap-2">
           <Save size={15} /> {pwdLoading ? 'Modification...' : 'Changer le mot de passe'}
         </button>
+      </section>
+
+      {/* Google Agenda */}
+      <section className="card p-6 space-y-4">
+        <h3 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+          Synchronisation Google Agenda
+        </h3>
+
+        {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
+          <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3">
+            Variable <code className="font-mono">VITE_GOOGLE_CLIENT_ID</code> non configuree.
+            Ajoutez-la dans votre fichier <code className="font-mono">.env</code> pour activer cette fonctionnalite.
+          </div>
+        )}
+
+        {/* Statut connexion */}
+        <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${gcalConnected ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
+            <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">
+              {gcalConnected ? 'Connecte a Google Agenda' : 'Non connecte'}
+            </span>
+          </div>
+          {gcalConnected ? (
+            <button
+              onClick={handleGcalDisconnect}
+              className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400 font-medium transition-colors"
+            >
+              Deconnecter
+            </button>
+          ) : (
+            <button
+              onClick={handleGcalConnect}
+              disabled={gcalLoading || !import.meta.env.VITE_GOOGLE_CLIENT_ID}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors"
+            >
+              {gcalLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+              Connecter Google Agenda
+            </button>
+          )}
+        </div>
+
+        {/* Sync manuelle */}
+        {gcalConnected && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  Synchroniser les seances
+                </p>
+                {gcalLastSync && (
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Derniere sync : {gcalLastSync}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleGcalSync}
+                disabled={gcalSyncing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {gcalSyncing
+                  ? <><Loader2 size={14} className="animate-spin" /> {gcalProgress}%</>
+                  : <><RefreshCw size={14} /> Synchroniser</>
+                }
+              </button>
+            </div>
+
+            {gcalSyncing && (
+              <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5">
+                <div
+                  className="bg-green-500 h-1.5 rounded-full transition-all duration-300"
+                  style={{ width: `${gcalProgress}%` }}
+                />
+              </div>
+            )}
+
+            {/* Auto-sync toggle */}
+            <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-700">
+              <div
+                onClick={() => handleAutoSyncToggle(!gcalAutoSync)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${gcalAutoSync ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${gcalAutoSync ? 'translate-x-5' : ''}`} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Synchronisation automatique</p>
+                <p className="text-xs text-gray-400">
+                  Synchronise automatiquement a chaque deploiement de seances
+                </p>
+              </div>
+            </label>
+          </div>
+        )}
       </section>
 
       {/* Compte */}

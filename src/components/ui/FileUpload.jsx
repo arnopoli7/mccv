@@ -20,6 +20,14 @@ export function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
 }
 
+// Reconstitue le data URL depuis un fichier (format normal ou chunked)
+export function getFileData(file) {
+  if (!file) return null
+  if (file.data) return file.data
+  if (file.chunks && Array.isArray(file.chunks) && file.chunks.length > 0) return file.chunks.join('')
+  return null
+}
+
 // ─── Helpers internes ────────────────────────────────────────────────────────
 
 function getFileIcon(file) {
@@ -33,13 +41,16 @@ function getFileIcon(file) {
   return '📎'
 }
 
-const MAX_SIZE_BYTES = 5 * 1024 * 1024  // 5 Mo
-const COMPRESS_THRESHOLD = 500 * 1024   // compresser les images > 500 Ko
+const MAX_SIZE_BYTES = 10 * 1024 * 1024          // 10 Mo
+const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024    // 5 Mo : découpage en chunks
+const CHUNK_SIZE_CHARS = 900 * 1024              // ~900 Ko par chunk base64
+const COMPRESS_THRESHOLD = 500 * 1024            // compresser les images > 500 Ko
 const ACCEPT_ALL = '.pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'
 const ACCEPTED_EXTS = /\.(pdf|ppt|pptx|doc|docx|xls|xlsx|jpg|jpeg|png)$/i
 
 function validateFile(file) {
-  if (file.size > MAX_SIZE_BYTES) return 'Fichier trop volumineux (max 5 Mo)'
+  if (file.size > MAX_SIZE_BYTES)
+    return "Fichier trop volumineux (max 10 Mo). Compressez votre PDF avant de l'uploader."
   if (!ACCEPTED_EXTS.test(file.name)) return 'Format non supporté'
   return null
 }
@@ -74,12 +85,39 @@ function compressImage(file) {
 
 const IMAGE_EXTS = /\.(jpg|jpeg|png|gif|webp)$/i
 
-async function readFile(file) {
+async function readFile(file, onProgress) {
   if (IMAGE_EXTS.test(file.name) && file.size > COMPRESS_THRESHOLD) {
+    onProgress?.(30)
     const compressed = await compressImage(file)
+    onProgress?.(100)
     if (compressed) return compressed
   }
-  return fileToBase64(file)
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 85))
+      }
+    }
+    reader.onload = (e) => {
+      onProgress?.(95)
+      const dataUrl = e.target.result
+      if (file.size > LARGE_FILE_THRESHOLD) {
+        // Découper en chunks de ~900 Ko
+        const chunks = []
+        for (let i = 0; i < dataUrl.length; i += CHUNK_SIZE_CHARS) {
+          chunks.push(dataUrl.slice(i, i + CHUNK_SIZE_CHARS))
+        }
+        onProgress?.(100)
+        resolve({ name: file.name, size: file.size, type: file.type, chunks })
+      } else {
+        onProgress?.(100)
+        resolve({ name: file.name, size: file.size, type: file.type, data: dataUrl })
+      }
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
 }
 
 // ─── Confirmation inline ──────────────────────────────────────────────────────
@@ -110,13 +148,32 @@ function DeleteConfirm({ onConfirm, onCancel }) {
   )
 }
 
+// ─── Barre de progression ────────────────────────────────────────────────────
+
+function ProgressBar({ progress }) {
+  return (
+    <div className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50">
+      <div className="flex justify-between items-center mb-1.5">
+        <span className="text-xs text-gray-500 dark:text-gray-400">Chargement en cours…</span>
+        <span className="text-xs font-medium text-blue-600 dark:text-blue-400">{progress}%</span>
+      </div>
+      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5">
+        <div
+          className="bg-blue-500 h-1.5 rounded-full transition-all duration-150"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
 // ─── FileUpload (fichier unique) ─────────────────────────────────────────────
 
 // storagePath ignoré (conservé pour compatibilité des appelants)
 export default function FileUpload({ value, onChange, label = 'Déposer un fichier', storagePath: _sp }) {
   const toast = useToast()
   const inputRef = useRef()
-  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(null) // null = inactif, 0-100 = en cours
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   async function handleFile(e) {
@@ -130,17 +187,19 @@ export default function FileUpload({ value, onChange, label = 'Déposer un fichi
       return
     }
 
-    setUploading(true)
+    setProgress(0)
     try {
-      const data = await readFile(file)
+      const data = await readFile(file, setProgress)
       onChange(data)
     } catch {
       toast.error('Erreur lors de la lecture du fichier.')
     } finally {
-      setUploading(false)
+      setProgress(null)
       e.target.value = ''
     }
   }
+
+  const fileData = getFileData(value)
 
   return (
     <div>
@@ -154,12 +213,17 @@ export default function FileUpload({ value, onChange, label = 'Déposer un fichi
           <span className="text-xl shrink-0">{getFileIcon(value)}</span>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{value.name}</p>
-            <p className="text-xs text-gray-500">{formatFileSize(value.size)}</p>
+            <p className="text-xs text-gray-500">
+              {formatFileSize(value.size)}
+              {value.chunks && (
+                <span className="ml-1 text-blue-500">· {value.chunks.length} blocs</span>
+              )}
+            </p>
           </div>
           <div className="flex gap-1">
-            {value.data && (
+            {fileData && (
               <a
-                href={value.data}
+                href={fileData}
                 download={value.name}
                 className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500"
                 title="Télécharger"
@@ -177,10 +241,8 @@ export default function FileUpload({ value, onChange, label = 'Déposer un fichi
             </button>
           </div>
         </div>
-      ) : uploading ? (
-        <div className="p-3 text-sm text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-center">
-          Lecture en cours…
-        </div>
+      ) : progress !== null ? (
+        <ProgressBar progress={progress} />
       ) : (
         <button
           type="button"
@@ -210,8 +272,8 @@ export default function FileUpload({ value, onChange, label = 'Déposer un fichi
 export function MultiFileUpload({ files = [], onAdd, onRemove, storagePath: _sp }) {
   const toast = useToast()
   const inputRef = useRef()
-  const [uploading, setUploading] = useState(false)
-  const [confirmIdx, setConfirmIdx] = useState(null) // index en attente de suppression
+  const [progress, setProgress] = useState(null)
+  const [confirmIdx, setConfirmIdx] = useState(null)
 
   async function handleFile(e) {
     const file = e.target.files?.[0]
@@ -224,14 +286,14 @@ export function MultiFileUpload({ files = [], onAdd, onRemove, storagePath: _sp 
       return
     }
 
-    setUploading(true)
+    setProgress(0)
     try {
-      const data = await readFile(file)
+      const data = await readFile(file, setProgress)
       onAdd(data)
     } catch {
       toast.error('Erreur lors de la lecture du fichier.')
     } finally {
-      setUploading(false)
+      setProgress(null)
       e.target.value = ''
     }
   }
@@ -250,10 +312,13 @@ export function MultiFileUpload({ files = [], onAdd, onRemove, storagePath: _sp 
               <span className="text-lg shrink-0">{getFileIcon(f)}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-700 dark:text-gray-200 truncate font-medium">{f.name}</p>
-                <p className="text-xs text-gray-400">{formatFileSize(f.size)}</p>
+                <p className="text-xs text-gray-400">
+                  {formatFileSize(f.size)}
+                  {f.chunks && <span className="ml-1 text-blue-500">· {f.chunks.length} blocs</span>}
+                </p>
               </div>
-              {f.data && (
-                <a href={f.data} download={f.name}
+              {getFileData(f) && (
+                <a href={getFileData(f)} download={f.name}
                   className="text-gray-400 hover:text-blue-500 shrink-0" title="Télécharger">
                   <Download size={14} />
                 </a>
@@ -270,10 +335,8 @@ export function MultiFileUpload({ files = [], onAdd, onRemove, storagePath: _sp 
           )}
         </div>
       ))}
-      {uploading ? (
-        <div className="p-3 text-sm text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700/50 text-center">
-          Lecture en cours…
-        </div>
+      {progress !== null ? (
+        <ProgressBar progress={progress} />
       ) : (
         <button
           type="button"

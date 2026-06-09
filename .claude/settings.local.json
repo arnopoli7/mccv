@@ -5,7 +5,8 @@
       "Bash(npm run:*)",
       "Bash(python3:*)",
       "Bash(node:*)",
-      "Bash(npm list:*)"
+      "Bash(npm list:*)",
+      "Bash(npx vite:*)"
     ]
   }
 }

@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { genId } from '../utils/id'
 import AssistantIA from '../features/classe/AssistantIA'
+import EvalGenerateur from '../features/generateur/EvalGenerateur'
 
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || ''
 const API_URL = import.meta.env.DEV
@@ -955,6 +956,27 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
             </button>
           )}
 
+          {/* Generateur d'evaluation — tous utilisateurs */}
+          <button
+            onClick={() => setSelected('eval')}
+            className="group flex flex-col items-start gap-3 p-5 rounded-xl border-2 border-gray-200
+              dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-orange-400
+              dark:hover:border-orange-500 hover:shadow-md transition-all text-left"
+          >
+            <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center">
+              <span className="text-2xl">📝</span>
+            </div>
+            <div>
+              <div className="font-semibold text-gray-900 dark:text-white group-hover:text-orange-600
+                dark:group-hover:text-orange-400 transition-colors">
+                Evaluation
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Generez une evaluation complete avec corrige et bareme
+              </div>
+            </div>
+          </button>
+
           {/* Assistant IA — Arnaud7 uniquement */}
           {isArnaud7 && (
             <button
@@ -985,6 +1007,10 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER — Assistant IA
   // ═══════════════════════════════════════════════════════════════════════════
+
+  if (selected === 'eval') {
+    return <EvalGenerateur onBack={() => setSelected(null)} />
+  }
 
   if (selected === 'ia') {
     const iaClasse = classes.find(c => c.id === iaClasseId) || null
