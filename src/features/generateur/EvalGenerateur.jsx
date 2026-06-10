@@ -9,6 +9,89 @@ const API_URL = import.meta.env.DEV
   ? '/api/anthropic/v1/messages'
   : 'https://api.anthropic.com/v1/messages'
 
+const DIPLOMES = [
+  { value: 'CAP_SAPVER', label: 'CAP SAPVER' },
+  { value: 'SECONDE_TCVA', label: 'Seconde Pro TCVA' },
+  { value: 'BAC_PRO_TCVA', label: 'Bac Pro TCVA (1re / Tle)' },
+  { value: 'BTS_MCO', label: 'BTS MCO' },
+  { value: 'BTS_NDRC', label: 'BTS NDRC' },
+  { value: 'Autre', label: 'Autre (saisie libre)' },
+]
+
+const MODULES_PAR_DIPLOME = {
+  CAP_SAPVER: [
+    'MP1 : Relation aux personnes et communication professionnelle',
+    'MP2 : Vente et relation commerciale',
+    'MP3 : Produits, services et espaces de vente',
+    'MP4 : Techniques de vente en commerce alimentaire et de proximite',
+    'MP5 : Services aux personnes en espace rural',
+    'MIP : Module d\'Initiative Professionnelle',
+  ],
+  SECONDE_TCVA: [
+    'Decouverte des filieres et des acteurs du secteur TCVA',
+    'L\'environnement commercial et les types de commerce',
+    'Les produits alimentaires et boissons : caracteristiques et reglementation',
+    'La relation client et les techniques de vente',
+    'La communication commerciale en point de vente',
+    'Les operations commerciales et promotionnelles',
+    'Hygiene, securite et qualite alimentaire',
+    'L\'entreprise et son environnement economique et juridique',
+  ],
+  BAC_PRO_TCVA: [
+    'Module 1 : L\'environnement commercial et economique de la filiere',
+    'Module 2 : Les produits alimentaires et les boissons',
+    'Module 3 : La relation client et la vente conseil',
+    'Module 4 : L\'animation et la dynamisation de l\'offre',
+    'Module 5 : La communication commerciale',
+    'Module 6 : La gestion de l\'unite commerciale',
+    'Module 7 : Le droit et la reglementation professionnelle',
+    'Module 8 : Le management et l\'organisation du travail',
+    'Module 9 : Les techniques de negociation et d\'argumentation',
+    'Module 10 : Le merchandising et l\'implantation des produits',
+    'Module 11 : La logistique et la gestion des stocks',
+    'Module 12 : Le numerique au service de la vente',
+  ],
+  BTS_MCO: [
+    'E41 - Cibler et prospecter la clientele',
+    'E41 - Analyser les besoins du client',
+    'E41 - Argumenter et conclure la vente',
+    'E41 - Fideliser la clientele',
+    'E42 - Elaborer et adapter en continu l\'offre de produits et services',
+    'E42 - Agencer l\'espace commercial',
+    'E42 - Organiser les promotions et animations commerciales',
+    'E42 - Concevoir et mettre en place la communication',
+    'E42 - Analyser et suivre l\'action commerciale',
+    'E43 - Gerer les approvisionnements et les stocks',
+    'E43 - Gerer les flux financiers',
+    'E43 - Analyser les performances commerciales',
+    'E43 - Elaborer des budgets previsionnels',
+    'E44 - Organiser le travail de l\'equipe',
+    'E44 - Recruter et integrer les collaborateurs',
+    'E44 - Animer et motiver l\'equipe',
+    'E44 - Evaluer les performances individuelles et collectives',
+    'CEJM - L\'integration de l\'entreprise dans son environnement',
+    'CEJM - La regulation de l\'activite economique',
+    'CEJM - L\'organisation de l\'activite de l\'entreprise',
+    'CEJM - Le financement de l\'activite de l\'entreprise',
+    'CEJM - Les relations sociales dans l\'entreprise',
+    'CEJM - La creation de valeur dans l\'entreprise',
+  ],
+  BTS_NDRC: [
+    'E41 - Developpement de clientele et prospection',
+    'E41 - Negociation et techniques de vente',
+    'E41 - Valorisation et animation de la relation client',
+    'E41 - Veille et expertise commerciales',
+    'E42 - Management de la relation client omnicanal',
+    'E42 - Animation de la relation client digital',
+    'E42 - Developpement de la relation client e-commerce',
+    'E42 - Outils numeriques et CRM',
+    'E43 - Implantation et promotion d\'une offre chez des distributeurs',
+    'E43 - Developpement d\'un reseau de partenaires',
+    'E43 - Animation d\'un reseau de vente directe',
+    'E43 - Merchandising et animation reseau',
+  ],
+}
+
 const TYPES_EVAL = [
   { value: 'QCM', label: 'QCM' },
   { value: 'Questions ouvertes', label: 'Questions ouvertes' },
@@ -30,6 +113,8 @@ export default function EvalGenerateur({ onBack }) {
     classeId: '',
     matiereId: '',
     sequenceId: '',
+    diplome: '',
+    theme: '',
     typeEval: 'QCM',
     duree: '1h',
     difficulte: 'Moyen',
@@ -67,6 +152,10 @@ export default function EvalGenerateur({ onBack }) {
     setForm(f => ({ ...f, sequenceId: '' }))
   }, [form.matiereId])
 
+  useEffect(() => {
+    setForm(f => ({ ...f, theme: '' }))
+  }, [form.diplome])
+
   function setField(field, value) { setForm(f => ({ ...f, [field]: value })) }
 
   async function handleGenerate() {
@@ -78,12 +167,15 @@ export default function EvalGenerateur({ onBack }) {
     const seqTitre = selectedSeq?.titre || 'Non precisee'
     const objectifs = selectedSeq?.objectifs || ''
     const competences = selectedSeq?.competences || ''
+    const diplomeLabel = DIPLOMES.find(d => d.value === form.diplome)?.label || ''
 
     const prompt = `Tu es un professeur de commerce expert en evaluation pedagogique.
 Genere une evaluation complete et professionnelle.
 
 CONTEXTE :
 - Classe : ${classeNom}
+- Diplome : ${diplomeLabel || 'Non precise'}
+- Theme / Module : ${form.theme || 'Non precise'}
 - Matiere : ${matiereNom}
 - Sequence : ${seqTitre}
 - Objectifs : ${objectifs || 'Non precises'}
@@ -107,7 +199,7 @@ GENERE :
 
 REGLES :
 - Vocabulaire adapte au niveau
-- Exemples du secteur ${matiereNom} (commerce, vente, distribution)
+- Exemples et contenus specifiquement adaptes au module : ${form.theme || matiereNom || 'commerce, vente, distribution'}
 - Questions progressives (du plus simple au plus complexe)
 - Bareme coherent et detaille
 - Format propre et directement utilisable en classe
@@ -358,6 +450,42 @@ ${(result.corrige.questions || []).map(q =>
             {classes.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
           </select>
         </div>
+
+        {/* Diplome */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Diplome</label>
+          <select value={form.diplome} onChange={e => setField('diplome', e.target.value)}
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
+            <option value="">-- Selectionner un diplome --</option>
+            {DIPLOMES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+          </select>
+        </div>
+
+        {/* Theme / Module */}
+        {form.diplome && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Theme / Module
+            </label>
+            {form.diplome === 'Autre' ? (
+              <input
+                type="text"
+                value={form.theme}
+                onChange={e => setField('theme', e.target.value)}
+                placeholder="Ex : La relation client, La gestion des stocks…"
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            ) : (
+              <select value={form.theme} onChange={e => setField('theme', e.target.value)}
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
+                <option value="">-- Selectionner un module --</option>
+                {(MODULES_PAR_DIPLOME[form.diplome] || []).map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
 
         {/* Matiere */}
         {form.classeId && matieres.length > 0 && (
