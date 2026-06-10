@@ -538,8 +538,8 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
       // ── Dimensions (pouces, LAYOUT_16x9 = 10" × 5.625") ──────────────────
       const W = 10, H = 5.625
       const cm = v => v / 2.54           // cm → pouces
-      const BAND_H = cm(1.5)             // bandeau titre : 1.5cm
-      const BODY_Y = cm(1.8)             // début corps   : 1.8cm du haut
+      const BAND_H = cm(1.8)             // bandeau titre : 1.8cm
+      const BODY_Y = cm(2.1)             // début corps   : 2.1cm du haut (bande + 0.3cm)
       const FOOT_H = cm(0.55)            // hauteur pied de page
       const FOOT_Y = H - FOOT_H          // début pied de page
       const BODY_H = FOOT_Y - BODY_Y     // hauteur utile du corps
@@ -552,12 +552,26 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
         .replace(/\s{2,}/g, ' ').trim()
 
       // ── Helpers partagés ────────────────────────────────────────────────────
-      const addBand = (sl, title) => {
+      const addBand = (sl, title, slideIdx) => {
         sl.addShape(prs.ShapeType.rect, { x: 0, y: 0, w: W, h: BAND_H, fill: { color: C.primary }, line: { color: C.primary } })
         sl.addText(clean(title), {
-          x: cm(0.6), y: 0, w: W - cm(1.2), h: BAND_H,
-          fontSize: 18, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle',
+          x: cm(0.6), y: 0, w: W - cm(2.8), h: BAND_H,
+          fontSize: 20, color: C.white, bold: true, fontFace: 'Georgia', valign: 'middle',
         })
+        // Badge numéro de slide en haut à droite dans le bandeau
+        if (slideIdx !== undefined) {
+          const badgeW = cm(1.1), badgeH = cm(0.7)
+          const badgeX = W - badgeW - cm(0.35)
+          const badgeY = (BAND_H - badgeH) / 2
+          sl.addShape(prs.ShapeType.rect, {
+            x: badgeX, y: badgeY, w: badgeW, h: badgeH,
+            fill: { color: C.accent }, line: { color: C.accent },
+          })
+          sl.addText(String(slideIdx + 1), {
+            x: badgeX, y: badgeY, w: badgeW, h: badgeH,
+            fontSize: 11, color: C.white, bold: true, fontFace: 'Calibri', align: 'center', valign: 'middle',
+          })
+        }
       }
 
       const addFooter = (sl, idx) => {
@@ -584,11 +598,13 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
         switch (item.type) {
           case 'liste': {
             const n = val.split('\n').filter(l => l.trim()).length
-            return n * cm(1.2) + GAP
+            const lineH = n <= 3 ? cm(1.05) : n <= 5 ? cm(0.85) : cm(0.68)
+            return n * lineH + GAP
           }
-          case 'encart':  return cm(0.8) + cm(1.9) + GAP   // label + boîte + gap
+          case 'sous_titre': return cm(0.75) + GAP * 0.5
+          case 'encart':  return cm(0.72) + cm(2.0) + GAP
           case 'tableau': return Math.min(val.split('\n').filter(r => r.trim()).length * cm(1.05), BODY_H * 0.65) + GAP
-          default:        return cm(1.35) + GAP
+          default:        return cm(0.9) + GAP
         }
       }
 
@@ -597,22 +613,53 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
         const val = clean(item.valeur || '')
         if (!val && item.type !== 'liste') return cy
 
-        if (item.type === 'liste') {
+        // ── Sous-titre de section ──
+        if (item.type === 'sous_titre') {
+          const subH = cm(0.44)
+          const lineH = cm(0.04)
+          const totalH = subH + lineH + GAP * 0.5
+          if (cy + totalH > maxY) return cy
+          sl.addText(val, {
+            x: MAR, y: cy, w: W - 2 * MAR, h: subH,
+            fontSize: 14, color: C.primary, bold: true, fontFace: 'Calibri',
+          })
+          sl.addShape(prs.ShapeType.rect, {
+            x: MAR, y: cy + subH, w: W - 2 * MAR, h: lineH,
+            fill: { color: C.accent }, line: { color: C.accent },
+          })
+          return cy + subH + lineH + GAP * 0.5
+
+        // ── Liste à puces ──
+        } else if (item.type === 'liste') {
           const lines = val.split('\n').filter(l => l.trim())
           if (!lines.length) return cy
-          const availH = maxY - cy - GAP
-          const lineH = Math.min(cm(1.1), Math.max(cm(0.7), availH / lines.length))
-          const bh = Math.min(lines.length * lineH, maxY - cy - GAP)
-          const fs = 14
+          const n = lines.length
+
+          // Taille de police adaptative
+          const fs = n <= 3 ? 18 : n <= 5 ? 15 : 13
+
+          // Espacement inter-paragraphe adaptatif (en points)
+          const paraSpaceAfter = n <= 3 ? 17 : n <= 5 ? 11 : 7
+
+          // Hauteur estimée par ligne
+          const lineH = n <= 3 ? cm(1.05) : n <= 5 ? cm(0.85) : cm(0.68)
+          const bh = Math.min(n * lineH, maxY - cy - GAP)
+
           const runs = []
           lines.forEach((l, li) => {
-            const text = l.replace(/^[-•*■\s]+/, '')
-            runs.push({ text: '\u25CF  ', options: { color: C.accent, fontSize: fs, fontFace: 'Calibri' } })
+            const text = l.replace(/^[-•*\u25A0\u25CF\s]+/, '')
+            // Puce carrée ■ 8pt ACCENT
+            runs.push({ text: '\u25A0  ', options: { color: C.accent, fontSize: 8, fontFace: 'Calibri' } })
+            // Texte indenté
             runs.push({ text, options: { color: C.text, fontSize: fs, fontFace: 'Calibri', breakLine: li < lines.length - 1 } })
           })
-          sl.addText(runs, { x: MAR, y: cy, w: W - 2 * MAR, h: bh, fontFace: 'Calibri', paraSpaceAfter: 10 })
+          sl.addText(runs, {
+            x: MAR + cm(0.5), y: cy, w: W - 2 * MAR - cm(0.5), h: bh,
+            fontFace: 'Calibri', paraSpaceAfter,
+          })
           return cy + bh + GAP
 
+        // ── Tableau ──
         } else if (item.type === 'tableau') {
           const tRows = buildTableRows(val, C)
           if (!tRows.length) return cy
@@ -620,25 +667,29 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
           sl.addTable(tRows, { x: MAR, y: cy, w: W - 2 * MAR, h: th, border: { color: 'E5E7EB', type: 'solid', pt: 1 } })
           return cy + th + GAP
 
+        // ── Encart exemple ──
         } else if (item.type === 'encart') {
-          sl.addText('Exemple concret :', {
-            x: MAR, y: cy, w: cm(5), h: cm(0.48),
-            fontSize: 11, color: C.amber, bold: true, fontFace: 'Calibri',
+          // Label "Exemple :" en ACCENT bold
+          const labelH = cm(0.5)
+          sl.addText('Exemple :', {
+            x: MAR, y: cy, w: cm(5), h: labelH,
+            fontSize: 12, color: C.accent, bold: true, fontFace: 'Calibri',
           })
-          const ey = cy + cm(0.52)
-          const eh = Math.min(cm(1.9), maxY - ey - GAP)
-          // Fond pale pleine largeur
+          const ey = cy + labelH + cm(0.08)
+          const eh = Math.min(cm(2.0), maxY - ey - GAP)
+          // Fond PALE pleine largeur
           sl.addShape(prs.ShapeType.rect, { x: MAR, y: ey, w: W - 2 * MAR, h: eh, fill: { color: C.pale }, line: { color: C.pale } })
           // Bordure gauche 4pt (~cm(0.14))
           sl.addShape(prs.ShapeType.rect, { x: MAR, y: ey, w: cm(0.14), h: eh, fill: { color: C.accent }, line: { color: C.accent } })
           sl.addText(val, {
             x: MAR + cm(0.28), y: ey + cm(0.14), w: W - 2 * MAR - cm(0.42), h: eh - cm(0.28),
-            fontSize: 12, color: C.text, fontFace: 'Calibri', italic: true, valign: 'middle', wrap: true,
+            fontSize: 11, color: C.dark, fontFace: 'Calibri', italic: true, valign: 'middle', wrap: true,
           })
           return ey + eh + GAP
 
+        // ── Texte libre ──
         } else {
-          const th = Math.min(cm(1.3), maxY - cy - GAP)
+          const th = Math.min(cm(1.1), maxY - cy - GAP)
           sl.addText(val, {
             x: MAR, y: cy, w: W - 2 * MAR, h: th,
             fontSize: 14, color: C.text, fontFace: 'Calibri', wrap: true,
@@ -748,7 +799,7 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
         // ── PLAN ──────────────────────────────────────────────────────────────
         } else if (slide.type === 'plan') {
           sl.background = { fill: C.fafafa }
-          addBand(sl, 'Plan du cours')
+          addBand(sl, 'Plan du cours', si)
 
           const items = (slide.contenu || [])
             .map(item => clean(item.valeur || '').replace(/^[-•*■\d.)\s]+/, '').trim())
@@ -808,7 +859,7 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
         // ── SYNTHESE ──────────────────────────────────────────────────────────
         } else if (slide.type === 'synthese') {
           sl.background = { fill: 'FFFFFF' }
-          addBand(sl, 'Synthese')
+          addBand(sl, 'Synthese', si)
 
           const items = slide.contenu || []
           // Séparer encart "À retenir" du reste
@@ -854,14 +905,62 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
         // ── CONTENU / REMEDIATION ─────────────────────────────────────────────
         } else {
           sl.background = { fill: 'FFFFFF' }
-          addBand(sl, clean(slide.titre || ''))
+          addBand(sl, clean(slide.titre || ''), si)
 
           const items = slide.contenu || []
-          let cy = BODY_Y
+
+          // Compter les points totaux pour adapter le rendu
+          let totalPoints = 0
           for (const item of items) {
-            if (cy >= FOOT_Y - cm(0.35)) break
-            cy = renderItem(sl, item, cy, FOOT_Y)
+            if (item.type === 'liste') {
+              totalPoints += clean(item.valeur || '').split('\n').filter(l => l.trim()).length
+            } else if (item.type !== 'sous_titre') {
+              totalPoints += 1
+            }
           }
+          const fewContent = totalPoints > 0 && totalPoints < 4
+
+          // Réserver zone "À retenir" en bas si peu de contenu
+          const RETENIR_H = fewContent ? cm(1.6) : 0
+          const bodyMaxY = FOOT_Y - RETENIR_H - (fewContent ? GAP : 0)
+
+          // Centrage vertical si peu de contenu
+          let cy = BODY_Y
+          if (fewContent) {
+            let totalEstH = 0
+            for (const item of items) totalEstH += estimH(item)
+            const available = bodyMaxY - BODY_Y
+            if (totalEstH < available * 0.75) {
+              cy = BODY_Y + Math.max(0, (available - totalEstH) / 2)
+            }
+          }
+
+          for (const item of items) {
+            if (cy >= bodyMaxY - cm(0.3)) break
+            cy = renderItem(sl, item, cy, bodyMaxY)
+          }
+
+          // Zone "À retenir" en bas pour les slides peu chargées
+          if (fewContent) {
+            const firstList = items.find(it => it.type === 'liste' || it.type === 'texte')
+            const keyText = firstList
+              ? clean(firstList.valeur || '').split('\n')[0].replace(/^[-•*\u25A0\u25CF\s]+/, '').trim()
+              : ''
+            const retY = FOOT_Y - RETENIR_H
+            sl.addShape(prs.ShapeType.rect, {
+              x: MAR, y: retY, w: W - 2 * MAR, h: RETENIR_H,
+              fill: { color: C.pale }, line: { color: C.pale },
+            })
+            sl.addShape(prs.ShapeType.rect, {
+              x: MAR, y: retY, w: cm(0.14), h: RETENIR_H,
+              fill: { color: C.accent }, line: { color: C.accent },
+            })
+            sl.addText('A retenir : ' + keyText, {
+              x: MAR + cm(0.28), y: retY + cm(0.14), w: W - 2 * MAR - cm(0.42), h: RETENIR_H - cm(0.28),
+              fontSize: 12, color: C.text, bold: true, fontFace: 'Calibri', valign: 'middle', wrap: true,
+            })
+          }
+
           addFooter(sl, si)
         }
       }
