@@ -101,8 +101,13 @@ export default function ClasseFiche() {
   // Progression globale
   const seances = seancesCalendrier({ classeId: id, anneeScolaireId: anneeId })
   const rubanList = rubanPedagogique({ classeId: id, anneeScolaireId: anneeId })
-  const total = rubanList.flatMap(rb => rb.sequences || []).reduce((acc, seq) => acc + (seq.seances?.length || 0), 0)
-  const done = seances.filter(s => s.statut === 'faite').length
+  const rubanSequences = rubanList.flatMap(rb => rb.sequences || [])
+  const total = rubanSequences.reduce((acc, seq) => acc + (seq.seances?.length || 0), 0)
+  // Ne compter que les séances liées au ruban de l'année active (filtrage strict)
+  const validRubanIds = new Set(rubanSequences.flatMap(seq => (seq.seances || []).map(s => s.id)))
+  const done = total > 0
+    ? seances.filter(s => s.statut === 'faite' && validRubanIds.has(s.seanceRubanId)).length
+    : 0
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
 
   // Matières
@@ -318,6 +323,7 @@ export default function ClasseFiche() {
           <ProgressionTab
             classe={classe}
             anneeId={anneeId}
+            onGoToRuban={() => switchTab('ruban')}
           />
         )}
         {tab === 'referentiels' && (

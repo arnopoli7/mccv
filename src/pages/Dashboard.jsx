@@ -87,8 +87,13 @@ export default function Dashboard() {
   function getClasseProgression(classeId) {
     const seances = allSeances.filter(s => s.classeId === classeId)
     const rubanList = allRuban.filter(rb => rb.classeId === classeId)
-    const total = rubanList.flatMap(rb => rb.sequences || []).reduce((acc, seq) => acc + (seq.seances?.length || 0), 0)
-    const done = seances.filter(s => s.statut === 'faite').length
+    const sequences = rubanList.flatMap(rb => rb.sequences || [])
+    const total = sequences.reduce((acc, seq) => acc + (seq.seances?.length || 0), 0)
+    // Ne compter que les séances liées au ruban actif (filtrage strict)
+    const validRubanIds = new Set(sequences.flatMap(seq => (seq.seances || []).map(s => s.id)))
+    const done = total > 0
+      ? seances.filter(s => s.statut === 'faite' && validRubanIds.has(s.seanceRubanId)).length
+      : 0
     const pct = total > 0 ? Math.round((done / total) * 100) : 0
     return { done, total, pct }
   }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Printer, Star, ClipboardList } from 'lucide-react'
+import { Printer, Star, ClipboardList, AlertTriangle } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { formatDate, parseISO, isInVacances, toISODate } from '../../utils/dateUtils'
@@ -122,15 +122,14 @@ function GanttTooltip({ seances, seqTitre }) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-export default function ProgressionTab({ classe, anneeId }) {
+export default function ProgressionTab({ classe, anneeId, onGoToRuban }) {
   const { seancesCalendrier, rubanPedagogique, vacances, ccf, anneesScolaires, emploiDuTemps, getParams } = useData()
   const { getCurrentUser } = useAuth()
   const [tooltipInfo, setTooltipInfo] = useState(null) // { seances, seqTitre, key }
   const [showBulletin, setShowBulletin] = useState(false)
 
-  const isArnaud7 = user?.login === 'Arnaud7'
-
   const user = getCurrentUser()
+  const isArnaud7 = user?.login === 'Arnaud7'
   const params = getParams()
   const annees = anneesScolaires()
   const anneeActive = annees.find(a => a.id === anneeId)
@@ -340,6 +339,28 @@ export default function ProgressionTab({ classe, anneeId }) {
       seqDetails,
     }
   }, [anneeActive?.id, allSeances.length, totalRubanSeances, vacancesList.length]) // eslint-disable-line
+
+  // ── Garde : pas de ruban ni de séances
+  if (rubanList.length === 0 && allSeances.length === 0) {
+    return (
+      <div className="card p-12 text-center space-y-3">
+        <AlertTriangle size={32} className="mx-auto text-orange-400" />
+        <p className="font-medium text-gray-700 dark:text-gray-200">Aucune séance déployée pour le moment.</p>
+        <p className="text-sm text-gray-400">
+          Créez votre ruban pédagogique et déployez-le sur le calendrier<br />
+          pour voir votre progression ici.
+        </p>
+        {onGoToRuban && (
+          <button
+            onClick={onGoToRuban}
+            className="mt-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition-colors"
+          >
+            Aller au Ruban pédagogique
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
