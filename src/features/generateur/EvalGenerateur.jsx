@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
-import { FileText, Loader2, RefreshCw, Printer, Download, BookMarked, X } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { FileText, Loader2, RefreshCw, Printer, Download, BookMarked, X, AlertTriangle, CheckCircle } from 'lucide-react'
 import { useData } from '../../contexts/DataContext'
 import { useToast } from '../../contexts/ToastContext'
 import { genId } from '../../utils/id'
+import { useNavigate } from 'react-router-dom'
 
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || ''
 const API_URL = import.meta.env.DEV
@@ -103,8 +104,9 @@ const DUREES = ['30min', '45min', '1h', '2h']
 const NIVEAUX_DIFF = ['Facile', 'Moyen', 'Difficile']
 
 export default function EvalGenerateur({ onBack }) {
-  const { get, add, getAnneeActive } = useData()
+  const { get, add, getAnneeActive, seancesCalendrier: getSeancesCalendrier } = useData()
   const toast = useToast()
+  const navigate = useNavigate()
 
   const classes = get('classes')
   const anneeActive = getAnneeActive()
@@ -113,6 +115,7 @@ export default function EvalGenerateur({ onBack }) {
     classeId: '',
     matiereId: '',
     sequenceId: '',
+    seanceId: '',
     diplome: '',
     theme: '',
     typeEval: 'QCM',
@@ -140,6 +143,38 @@ export default function EvalGenerateur({ onBack }) {
   const sequences = ruban?.sequences || []
   const selectedSeq = sequences.find(s => s.id === form.sequenceId)
 
+  // ── Progression & séances calendrier ──────────────────────────────────────
+  const anneeId = anneeActive?.id
+  const calSeances = (form.classeId && anneeId)
+    ? getSeancesCalendrier({ classeId: form.classeId, anneeScolaireId: anneeId })
+    : []
+
+  // IDs valides du ruban entier
+  const rubanTotalIds = useMemo(
+    () => new Set(sequences.flatMap(seq => (seq.seances || []).map(s => s.id))),
+    [sequences.length] // eslint-disable-line
+  )
+  // IDs de la séquence sélectionnée (ou tout le ruban si aucune)
+  const scopeIds = useMemo(() => {
+    if (form.sequenceId && selectedSeq) {
+      return new Set((selectedSeq.seances || []).map(s => s.id))
+    }
+    return rubanTotalIds
+  }, [form.sequenceId, selectedSeq, rubanTotalIds]) // eslint-disable-line
+
+  // Séances faites dans la portée (séq ou ruban entier)
+  const seancesFaites = calSeances.filter(s => s.statut === 'faite' && scopeIds.has(s.seanceRubanId))
+  // Total faites sur tout le ruban (pour le résumé)
+  const totalFaitesRuban = calSeances.filter(s => s.statut === 'faite' && rubanTotalIds.has(s.seanceRubanId)).length
+  const totalSeancesRuban = sequences.reduce((acc, seq) => acc + (seq.seances?.length || 0), 0)
+  const derniereSeanceFaite = [...calSeances]
+    .filter(s => s.statut === 'faite' && rubanTotalIds.has(s.seanceRubanId))
+    .sort((a, b) => b.date.localeCompare(a.date))[0] || null
+
+  // Blocage génération
+  const hasRuban = sequences.length > 0
+  const canGenerate = !hasRuban || seancesFaites.length > 0
+
   // Auto-sélect matière quand classe change
   useEffect(() => {
     if (!form.classeId) return
@@ -149,8 +184,12 @@ export default function EvalGenerateur({ onBack }) {
   }, [form.classeId]) // eslint-disable-line
 
   useEffect(() => {
-    setForm(f => ({ ...f, sequenceId: '' }))
+    setForm(f => ({ ...f, sequenceId: '', seanceId: '' }))
   }, [form.matiereId])
+
+  useEffect(() => {
+    setForm(f => ({ ...f, seanceId: '' }))
+  }, [form.sequenceId])
 
   useEffect(() => {
     setForm(f => ({ ...f, theme: '' }))
@@ -160,6 +199,10 @@ export default function EvalGenerateur({ onBack }) {
 
   async function handleGenerate() {
     if (!form.classeId) { toast.error('Selectionnez une classe.'); return }
+    if (!canGenerate) {
+      toast.error('Aucune seance realisee dans cette classe. Marquez vos seances comme faites avant de generer une evaluation.')
+      return
+    }
     if (!API_KEY) { toast.error('Cle API Anthropic non configuree.'); return }
 
     const classeNom = selectedClasse?.nom || ''
@@ -168,6 +211,19 @@ export default function EvalGenerateur({ onBack }) {
     const objectifs = selectedSeq?.objectifs || ''
     const competences = selectedSeq?.competences || ''
     const diplomeLabel = DIPLOMES.find(d => d.value === form.diplome)?.label || ''
+
+    // Séance spécifique sélectionnée
+    const seanceSelectionnee = calSeances.find(s => s.id === form.seanceId) || null
+
+    // Résumé des séances faites pour Claude
+    const seancesFaitesContext = seancesFaites.length > 0
+      ? seancesFaites.map((s, i) => {
+          let line = `  - Seance ${i + 1} : ${s.titre || 'Sans titre'} (${s.type || 'Cours'}, le ${s.date})`
+          if (s.noteCours) line += `\n    Note du prof : ${s.noteCours}`
+          if (s.etoiles > 0) line += ` [Niveau engagement : ${s.etoiles}/3]`
+          return line
+        }).join('\n')
+      : '  Aucune seance realisee dans la portee selectionnee'
 
     const prompt = `Tu es un professeur de commerce expert en evaluation pedagogique.
 Genere une evaluation complete et professionnelle.
@@ -180,6 +236,15 @@ CONTEXTE :
 - Sequence : ${seqTitre}
 - Objectifs : ${objectifs || 'Non precises'}
 - Competences visees : ${competences || 'Non precisees'}
+${seanceSelectionnee ? `- Seance ciblee : ${seanceSelectionnee.titre} (${seanceSelectionnee.date})` : ''}
+
+CONTENU DEJA VU EN CLASSE (base l'evaluation UNIQUEMENT sur ces seances) :
+${seancesFaitesContext}
+- Total seances realisees : ${seancesFaites.length} / ${totalSeancesRuban || seancesFaites.length}
+
+INSTRUCTION : Genere l'evaluation en coherence stricte avec le contenu des seances realisees ci-dessus.
+Si des notes du professeur mentionnent des difficultes, adapte le niveau en consequence.
+Ne pas evaluer du contenu qui n'a pas encore ete enseigne.
 
 PARAMETRES :
 - Type : ${form.typeEval}
@@ -451,6 +516,57 @@ ${(result.corrige.questions || []).map(q =>
           </select>
         </div>
 
+        {/* Warning : pas de ruban */}
+        {form.classeId && !hasRuban && (
+          <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-red-700 dark:text-red-400">
+                  Aucun ruban pedagogique trouve pour cette classe.
+                </p>
+                <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">
+                  Creez d'abord votre ruban pedagogique avant de generer une evaluation.
+                </p>
+                <button
+                  onClick={() => navigate(`/classes/${form.classeId}?tab=ruban`)}
+                  className="mt-2 text-xs font-medium text-red-600 dark:text-red-400 underline hover:no-underline"
+                >
+                  Creer le ruban
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Résumé progression */}
+        {form.classeId && hasRuban && (
+          <div className={`rounded-lg border px-4 py-3 ${seancesFaites.length > 0 ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              {seancesFaites.length > 0
+                ? <CheckCircle size={14} className="text-green-600 dark:text-green-400 shrink-0" />
+                : <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              }
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                Progression de la classe
+              </span>
+            </div>
+            <div className="text-xs text-gray-600 dark:text-gray-300 space-y-0.5">
+              <p>Seances realisees (ruban) : <strong>{totalFaitesRuban} / {totalSeancesRuban}</strong></p>
+              {form.sequenceId && selectedSeq && (
+                <p>Dans cette sequence : <strong>{seancesFaites.length} seance{seancesFaites.length !== 1 ? 's' : ''} realisee{seancesFaites.length !== 1 ? 's' : ''}</strong></p>
+              )}
+              {seancesFaites.length > 0
+                ? <p className="text-green-700 dark:text-green-400 font-medium">Evaluation possible sur {seancesFaites.length} seance{seancesFaites.length !== 1 ? 's' : ''} realisee{seancesFaites.length !== 1 ? 's' : ''}</p>
+                : <p className="text-amber-700 dark:text-amber-400 font-medium">Aucune seance realisee dans la portee selectionnee — marquez des seances comme "faites" pour debloquer.</p>
+              }
+              {derniereSeanceFaite && (
+                <p className="text-gray-500 dark:text-gray-400">Derniere seance : {derniereSeanceFaite.titre || 'Sans titre'} ({derniereSeanceFaite.date})</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Diplome */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Diplome</label>
@@ -515,6 +631,31 @@ ${(result.corrige.questions || []).map(q =>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 bg-gray-50 dark:bg-gray-700/50 px-2 py-1 rounded">
                 Objectifs : {selectedSeq.objectifs}
               </p>
+            )}
+          </div>
+        )}
+
+        {/* Séance concernée — uniquement les séances FAITES */}
+        {form.sequenceId && selectedSeq && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Seance concernee
+              <span className="ml-1 text-xs text-gray-400">(optionnel — uniquement les seances realisees)</span>
+            </label>
+            {seancesFaites.length === 0 ? (
+              <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                Aucune seance realisee dans cette sequence.
+              </p>
+            ) : (
+              <select value={form.seanceId} onChange={e => setField('seanceId', e.target.value)}
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
+                <option value="">-- Toutes les seances realisees --</option>
+                {seancesFaites.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.titre || 'Seance'} — {s.date}{s.noteCours ? ' *' : ''}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
         )}
@@ -588,9 +729,15 @@ ${(result.corrige.questions || []).map(q =>
           </div>
         )}
 
-        <button onClick={handleGenerate}
-          className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-lg px-4 py-2.5 transition-colors">
+        <button
+          onClick={handleGenerate}
+          disabled={form.classeId && hasRuban && !canGenerate}
+          className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium rounded-lg px-4 py-2.5 transition-colors"
+        >
           <FileText size={16} /> Generer l'evaluation
+          {form.classeId && hasRuban && !canGenerate && (
+            <span className="text-xs font-normal">(aucune seance realisee)</span>
+          )}
         </button>
       </div>
     </div>

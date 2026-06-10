@@ -62,6 +62,25 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
   const sequences = ruban?.sequences || []
   const totalSeances = sequences.reduce((acc, seq) => acc + (seq.seances?.length || 0), 0)
 
+  // Build two flat sections early (needed by handlers)
+  const allDeployed = []
+  const allUndeployed = []
+  for (const seq of sequences) {
+    for (const rs of (seq.seances || [])) {
+      const calEntry = calEntries.find(c => c.seanceRubanId === rs.id) || null
+      const item = { rubanSeance: rs, seq, calEntry }
+      if (calEntry) allDeployed.push(item)
+      else allUndeployed.push(item)
+    }
+  }
+  allDeployed.sort((a, b) => {
+    const da = a.calEntry.date + (a.calEntry.heureDebut || '')
+    const db = b.calEntry.date + (b.calEntry.heureDebut || '')
+    return da.localeCompare(db)
+  })
+  const allItems = [...allDeployed, ...allUndeployed]
+  const undeployedCount = allUndeployed.length
+
   // Nettoyage des séances orphelines au chargement
   useEffect(() => {
     if (orphanCheckedRef.current) return
@@ -214,9 +233,7 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
     const count = selected.size
     // Retire les calEntries des séances déployées sélectionnées
     const calIdsToRemove = new Set()
-    seqItems.forEach(({ items }) =>
-      items.forEach(item => { if (selected.has(item.rubanSeance.id) && item.calEntry) calIdsToRemove.add(item.calEntry.id) })
-    )
+    allItems.forEach(item => { if (selected.has(item.rubanSeance.id) && item.calEntry) calIdsToRemove.add(item.calEntry.id) })
     const allCal = get('seancesCalendrier')
     set('seancesCalendrier', allCal.filter(c => !calIdsToRemove.has(c.id)))
     // Retire du ruban
@@ -235,26 +252,6 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
       return next
     })
   }
-
-  // Build per-sequence item lists: deployed (sorted by date) then undeployed
-  const seqItems = sequences.map(seq => {
-    const deployed = []
-    const undeployed = []
-    for (const rs of (seq.seances || [])) {
-      const calEntry = calEntries.find(c => c.seanceRubanId === rs.id) || null
-      const item = { rubanSeance: rs, seq, calEntry }
-      if (calEntry) deployed.push(item)
-      else undeployed.push(item)
-    }
-    deployed.sort((a, b) => {
-      const da = a.calEntry.date + (a.calEntry.heureDebut || '')
-      const db = b.calEntry.date + (b.calEntry.heureDebut || '')
-      return da.localeCompare(db)
-    })
-    return { seq, items: [...deployed, ...undeployed] }
-  }).filter(s => s.items.length > 0)
-
-  const undeployedCount = seqItems.reduce((acc, { items }) => acc + items.filter(i => !i.calEntry).length, 0)
 
   const selItem = selectedItem
   const selStatut = selItem ? getStatut(selItem) : null
@@ -304,110 +301,92 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
         </div>
       </div>
 
-      {/* Bandeau séances non planifiées */}
-      {undeployedCount > 0 && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl text-sm">
-          <span className="flex-1 text-amber-800 dark:text-amber-200">
-            ⚠️ {undeployedCount} séance{undeployedCount > 1 ? 's' : ''} non planifiée{undeployedCount > 1 ? 's' : ''} — Déployez le ruban pour les placer sur le calendrier
-          </span>
-          {onGoToRuban && (
-            <button className="btn-secondary text-xs shrink-0" onClick={onGoToRuban}>Aller au Ruban</button>
+      {/* ── Section : Séances planifiées ─────────────────────────────────────── */}
+      <div className="card overflow-hidden">
+        <div className="px-5 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800 flex items-center justify-between">
+          <h3 className="font-semibold text-blue-800 dark:text-blue-200 text-sm">
+            📅 Séances planifiées
+            <span className="ml-2 text-blue-500 dark:text-blue-400 font-normal">({allDeployed.length})</span>
+          </h3>
+        </div>
+        {allDeployed.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-gray-400">
+            Aucune séance déployée sur le calendrier.
+            {onGoToRuban && (
+              <button className="ml-2 text-blue-500 hover:underline" onClick={onGoToRuban}>Déployer le ruban →</button>
+            )}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100 dark:divide-gray-700">
+            {allDeployed.map(item => (
+              <SeanceRow
+                key={item.rubanSeance.id}
+                item={item}
+                statut={getStatut(item)}
+                etoiles={getEtoiles(item)}
+                docs={getDocs(item)}
+                isSelected={selected.has(item.rubanSeance.id)}
+                selectionMode={selectionMode}
+                showSeqLabel
+                onOpen={() => setSelectedItem(item)}
+                onToggleStatut={e => { e.stopPropagation(); toggleStatut(item) }}
+                onDelete={e => {
+                  e.stopPropagation()
+                  setPendingDelete({ seqId: item.seq.id, seanceId: item.rubanSeance.id, calEntryId: item.calEntry?.id || null })
+                  setConfirmType('single')
+                }}
+                onToggleSelect={() => toggleSelect(item.rubanSeance.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Section : Séances du ruban non planifiées ────────────────────────── */}
+      <div className="card overflow-hidden">
+        <div className="px-5 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800 flex items-center justify-between">
+          <h3 className="font-semibold text-amber-800 dark:text-amber-200 text-sm">
+            📋 Séances du ruban (non planifiées)
+            <span className="ml-2 text-amber-500 dark:text-amber-400 font-normal">({allUndeployed.length})</span>
+          </h3>
+          {allUndeployed.length > 0 && onGoToRuban && (
+            <button
+              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors shrink-0"
+              onClick={onGoToRuban}
+            >
+              Déployer le ruban
+            </button>
           )}
         </div>
-      )}
-
-      {seqItems.map(({ seq, items }) => (
-        <div key={seq.id} className="card overflow-hidden">
-          <div className="px-5 py-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800">
-            <h3 className="font-semibold text-blue-800 dark:text-blue-200 text-sm">{seq.titre}</h3>
+        {allUndeployed.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-gray-400">
+            Toutes les séances du ruban sont planifiées.
           </div>
+        ) : (
           <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            {items.map(item => {
-              const { rubanSeance, calEntry, seq: itemSeq } = item
-              const statut = getStatut(item)
-              const deployed = !!calEntry
-              const etoiles = getEtoiles(item)
-              const isSelected = selected.has(rubanSeance.id)
-              return (
-                <div
-                  key={rubanSeance.id}
-                  className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer transition-colors
-                    ${isSelected ? 'bg-red-50/60 dark:bg-red-900/10' : ''}`}
-                  onClick={() => setSelectedItem(item)}
-                >
-                  {/* Checkbox (mode sélection) */}
-                  {selectionMode && (
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(rubanSeance.id)}
-                      onClick={e => e.stopPropagation()}
-                      className="w-4 h-4 shrink-0 accent-red-500 cursor-pointer"
-                    />
-                  )}
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm text-gray-800 dark:text-gray-100">
-                        {rubanSeance.titre}
-                      </span>
-                      {rubanSeance.type && (
-                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${TYPE_BADGE[rubanSeance.type] || 'bg-gray-100 text-gray-600'}`}>
-                          {rubanSeance.type}
-                        </span>
-                      )}
-                      {!deployed && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-400 italic">
-                          Non planifiée
-                        </span>
-                      )}
-                      {deployed && statutBadge(statut)}
-                      {etoiles > 0 && (
-                        <span className="flex gap-0.5">
-                          {[1, 2, 3].map(n => (
-                            <Star key={n} size={12} className={n <= etoiles ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200 dark:text-gray-700'} />
-                          ))}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {deployed
-                        ? `${formatDate(calEntry.date)} · ${calEntry.heureDebut}–${calEntry.heureFin}`
-                        : 'Date non définie'
-                      }
-                    </p>
-                  </div>
-
-                  {/* Bouton supprimer individuel — toujours visible, toujours rouge */}
-                  <button
-                    onClick={e => {
-                      e.stopPropagation()
-                      setPendingDelete({ seqId: itemSeq.id, seanceId: rubanSeance.id, calEntryId: calEntry?.id || null })
-                      setConfirmType('single')
-                    }}
-                    className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
-                    title="Supprimer cette séance"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-
-                  <button
-                    onClick={e => { e.stopPropagation(); toggleStatut(item) }}
-                    className={`p-1.5 rounded-lg transition-colors shrink-0
-                      ${statut === 'faite'
-                        ? 'text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20'
-                        : 'text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-green-500'
-                      }`}
-                    title={statut === 'faite' ? 'Marquer à faire' : 'Marquer faite'}
-                  >
-                    <CheckCircle size={16} />
-                  </button>
-                </div>
-              )
-            })}
+            {allUndeployed.map(item => (
+              <SeanceRow
+                key={item.rubanSeance.id}
+                item={item}
+                statut={getStatut(item)}
+                etoiles={getEtoiles(item)}
+                docs={getDocs(item)}
+                isSelected={selected.has(item.rubanSeance.id)}
+                selectionMode={selectionMode}
+                showSeqLabel
+                onOpen={() => setSelectedItem(item)}
+                onToggleStatut={e => { e.stopPropagation(); toggleStatut(item) }}
+                onDelete={e => {
+                  e.stopPropagation()
+                  setPendingDelete({ seqId: item.seq.id, seanceId: item.rubanSeance.id, calEntryId: null })
+                  setConfirmType('single')
+                }}
+                onToggleSelect={() => toggleSelect(item.rubanSeance.id)}
+              />
+            ))}
           </div>
-        </div>
-      ))}
+        )}
+      </div>
 
       {/* Confirmations suppression */}
       <ConfirmDialog
@@ -463,6 +442,86 @@ export default function SeancesTab({ classe, anneeId, onGoToRuban }) {
           />
         )}
       </Modal>
+    </div>
+  )
+}
+
+function SeanceRow({ item, statut, etoiles, docs, isSelected, selectionMode, showSeqLabel, onOpen, onToggleStatut, onDelete, onToggleSelect }) {
+  const { rubanSeance, calEntry, seq } = item
+  const deployed = !!calEntry
+
+  return (
+    <div
+      className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer transition-colors
+        ${isSelected ? 'bg-red-50/60 dark:bg-red-900/10' : ''}`}
+      onClick={onOpen}
+    >
+      {selectionMode && (
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggleSelect}
+          onClick={e => e.stopPropagation()}
+          className="w-4 h-4 shrink-0 accent-red-500 cursor-pointer"
+        />
+      )}
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">
+            {rubanSeance.titre}
+          </span>
+          {rubanSeance.type && (
+            <span className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${TYPE_BADGE[rubanSeance.type] || 'bg-gray-100 text-gray-600'}`}>
+              {rubanSeance.type}
+            </span>
+          )}
+          {deployed ? statutBadge(statut) : (
+            <span className="text-xs px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium shrink-0">
+              Non planifiée
+            </span>
+          )}
+          {etoiles > 0 && (
+            <span className="flex gap-0.5 shrink-0">
+              {[1, 2, 3].map(n => (
+                <Star key={n} size={12} className={n <= etoiles ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200 dark:text-gray-700'} />
+              ))}
+            </span>
+          )}
+          {docs.length > 0 && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 shrink-0">
+              📎 {docs.length}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {showSeqLabel && <span className="text-gray-500 dark:text-gray-400">{seq.titre} · </span>}
+          {deployed
+            ? `${formatDate(calEntry.date)} · ${calEntry.heureDebut}–${calEntry.heureFin}`
+            : 'Date non définie'
+          }
+        </p>
+      </div>
+
+      <button
+        onClick={onDelete}
+        className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
+        title="Supprimer cette séance"
+      >
+        <Trash2 size={14} />
+      </button>
+
+      <button
+        onClick={onToggleStatut}
+        className={`p-1.5 rounded-lg transition-colors shrink-0
+          ${statut === 'faite'
+            ? 'text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20'
+            : 'text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-green-500'
+          }`}
+        title={statut === 'faite' ? 'Marquer à faire' : 'Marquer faite'}
+      >
+        <CheckCircle size={16} />
+      </button>
     </div>
   )
 }

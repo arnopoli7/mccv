@@ -65,7 +65,7 @@ function buildSequences(rawSequences) {
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function Generateur() {
-  const { get, add, update, getAnneeActive } = useData()
+  const { get, add, update, getAnneeActive, seancesCalendrier: getSeancesCalendrier } = useData()
   const { isAdmin, getCurrentUser } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
@@ -91,7 +91,7 @@ export default function Generateur() {
 
   // ── PPT states ────────────────────────────────────────────────────────────
   const [pptForm, setPptForm] = useState({
-    classeId: '', matiereId: '', sequenceId: '',
+    classeId: '', matiereId: '', sequenceId: '', seanceId: '',
     niveau: '', option: '', chapitre: '', titre: '',
     contenu: '', objectifs: '', competences: '',
     difficulte: 'Intermédiaire', typeSeance: 'Cours magistral',
@@ -126,6 +126,22 @@ export default function Generateur() {
   const pptSequences = pptRuban?.sequences || []
   const pptSelectedPalette = PALETTES.find(p => p.id === pptForm.palette) || PALETTES[0]
 
+  // PPT — Progression et ruban
+  const pptCalSeances = (pptForm.classeId && anneeActive)
+    ? getSeancesCalendrier({ classeId: pptForm.classeId, anneeScolaireId: anneeActive.id })
+    : []
+  const pptSelectedSeq = pptSequences.find(s => s.id === pptForm.sequenceId) || null
+  const pptSeqRubanIds = pptSelectedSeq
+    ? new Set((pptSelectedSeq.seances || []).map(s => s.id))
+    : new Set(pptSequences.flatMap(seq => (seq.seances || []).map(s => s.id)))
+  const pptSeqCalSeances = pptCalSeances.filter(s => pptSeqRubanIds.has(s.seanceRubanId))
+  const pptSeancesFaites = pptSeqCalSeances.filter(s => s.statut === 'faite')
+  const pptSeancesAVenir = pptSeqCalSeances.filter(s => s.statut !== 'faite')
+  const pptDoneTotal = pptCalSeances.filter(s => s.statut === 'faite').length
+  const pptTotalRuban = pptSequences.reduce((acc, seq) => acc + (seq.seances?.length || 0), 0)
+  const pptHasRuban = pptSequences.length > 0
+  const pptAllDone = pptTotalRuban > 0 && pptDoneTotal >= pptTotalRuban
+
   // Auto-sélect matière ruban quand classe change
   useEffect(() => {
     if (!form.classeId) { setForm(f => ({ ...f, matiereId: '' })); return }
@@ -142,18 +158,38 @@ export default function Generateur() {
     setPptForm(f => ({ ...f, matiereId: mats.length === 1 ? mats[0].id : '', sequenceId: '' }))
   }, [pptForm.classeId]) // eslint-disable-line
 
-  // Auto-fill objectifs/compétences depuis la séquence sélectionnée
+  // Auto-fill objectifs/compétences/contenu depuis la séquence sélectionnée
   useEffect(() => {
-    if (!pptForm.sequenceId) return
+    if (!pptForm.sequenceId) { setPptForm(f => ({ ...f, seanceId: '' })); return }
     const seq = pptSequences.find(s => s.id === pptForm.sequenceId)
     if (seq) {
+      // Construire un résumé des séances de la séquence pour pré-remplir le contenu
+      const seancesList = (seq.seances || []).map((s, i) => `${i + 1}. ${s.titre || 'Séance sans titre'} (${s.type || 'Cours'}, ${s.duree || 1}h)`).join('\n')
       setPptForm(f => ({
         ...f,
+        seanceId: '',
         objectifs: seq.objectifs || f.objectifs,
         competences: seq.competences || f.competences,
+        titre: f.titre || seq.titre || '',
+        contenu: seancesList ? `Séances de la séquence :\n${seancesList}` : f.contenu,
       }))
     }
   }, [pptForm.sequenceId]) // eslint-disable-line
+
+  // Auto-fill titre depuis la séance sélectionnée
+  useEffect(() => {
+    if (!pptForm.seanceId || !pptSelectedSeq) return
+    const seance = (pptSelectedSeq.seances || []).find(s => s.id === pptForm.seanceId)
+    if (seance) {
+      setPptForm(f => ({
+        ...f,
+        titre: seance.titre || f.titre,
+        typeSeance: seance.type === 'TD / Exercices' ? 'TD' : seance.type === 'Évaluation' ? 'Évaluation' : 'Cours magistral',
+        duree: seance.duree ? `${seance.duree}h` : f.duree,
+        contenu: seance.objectif ? `Objectif : ${seance.objectif}` : f.contenu,
+      }))
+    }
+  }, [pptForm.seanceId]) // eslint-disable-line
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RUBAN — handlers
@@ -324,6 +360,32 @@ Réponds UNIQUEMENT avec le JSON, sans texte avant ou après.`
     setPptLoading(true); setPptError(null); setPptResult(null); setExpandedSlides({})
 
     const pal = pptSelectedPalette
+
+    // Contexte ruban pédagogique pour le prompt
+    let rubanContext = ''
+    if (pptHasRuban) {
+      if (pptSelectedSeq) {
+        const seancesDone = pptSeancesFaites.map((s, i) => `  - ${s.titre || 'Séance'} (${s.type || 'Cours'}) — faite le ${s.date || '?'}${s.noteCours ? ` | Note prof : ${s.noteCours}` : ''}`).join('\n')
+        const seancesAVenir = pptSeancesAVenir.map((s, i) => {
+          const rubanS = (pptSelectedSeq.seances || []).find(rs => rs.id === s.seanceRubanId)
+          return `  - ${rubanS?.titre || s.titre || 'Séance'} (${rubanS?.type || 'Cours'})`
+        }).join('\n')
+        const seancesNonDeployees = (pptSelectedSeq.seances || [])
+          .filter(rs => !pptCalSeances.some(cs => cs.seanceRubanId === rs.id))
+          .map(rs => `  - ${rs.titre} (${rs.type || 'Cours'}, ${rs.duree || 1}h)`)
+          .join('\n')
+        rubanContext = `\n\nCONTEXTE RUBAN PÉDAGOGIQUE :
+- Séquence : ${pptSelectedSeq.titre}
+- Séances déjà faites (${pptSeancesFaites.length}) :
+${seancesDone || '  (aucune)'}
+- Séances à venir (${pptSeancesAVenir.length}) :
+${seancesAVenir || seancesNonDeployees || '  (aucune)'}
+Tiens compte des séances déjà faites pour ne pas répéter le contenu, et prépare la prochaine séance à venir.`
+      } else {
+        rubanContext = `\n\nCONTEXTE RUBAN : ${pptTotalRuban} séances au total, ${pptDoneTotal} déjà faites.`
+      }
+    }
+
     const prompt = `Tu es un expert en création de présentations pédagogiques PowerPoint.
 Génère un plan de présentation détaillé en JSON pour une présentation de cours.
 
@@ -343,7 +405,7 @@ INFORMATIONS :
 - Inclure remédiation : ${pptForm.remediation ? 'Oui' : 'Non'}
 - Adapter pour difficultés : ${pptForm.difficulteEleves ? 'Oui' : 'Non'}
 - Palette principale : ${pal.primary}
-- Palette accent : ${pal.accent}
+- Palette accent : ${pal.accent}${rubanContext}
 
 STRUCTURE OBLIGATOIRE DES SLIDES :
 - Slide 1 : Titre (fond couleur principale, numéro chapitre, titre blanc)
@@ -1470,13 +1532,55 @@ Génère maintenant le fichier complet. Commence directement par le code, sans c
               </div>
             )}
 
+            {/* Avertissement pas de ruban */}
+            {pptForm.classeId && !pptHasRuban && (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-sm px-4 py-3 flex items-start gap-2">
+                <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                <span>Aucun ruban pédagogique pour cette classe. La présentation sera générée sans contexte de progression.{' '}
+                  <button onClick={() => navigate(`/classes/${pptForm.classeId}?tab=ruban`)} className="underline font-medium hover:no-underline">Créer le ruban →</button>
+                </span>
+              </div>
+            )}
+
+            {/* Résumé progression PPT */}
+            {pptHasRuban && pptForm.classeId && (
+              <div className={`rounded-lg border px-4 py-3 text-sm flex items-start gap-2 ${pptAllDone ? 'bg-gray-50 dark:bg-gray-700/40 border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400' : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'}`}>
+                <span className="text-base shrink-0">{pptAllDone ? '🏁' : '📈'}</span>
+                <span>
+                  {pptAllDone
+                    ? `Toutes les séances sont faites (${pptDoneTotal}/${pptTotalRuban}). La présentation sera générée en mode révision.`
+                    : `Progression : ${pptDoneTotal}/${pptTotalRuban} séances faites.${pptSeancesAVenir.length > 0 ? ` ${pptSeancesAVenir.length} séance(s) à venir dans la sélection.` : ''}`
+                  }
+                </span>
+              </div>
+            )}
+
             {/* Séquence */}
             {pptSequences.length > 0 && (
               <div>
                 <label className={labelCls}>Séquence du ruban <span className="text-gray-400 font-normal">(pré-remplit objectifs & compétences)</span></label>
                 <select value={pptForm.sequenceId} onChange={e => setPptField('sequenceId', e.target.value)} className={inputCls}>
-                  <option value="">-- Sélectionner une séquence --</option>
+                  <option value="">-- Toutes les séquences --</option>
                   {pptSequences.map((s, i) => <option key={s.id} value={s.id}>Séq. {i + 1} — {s.titre}</option>)}
+                </select>
+              </div>
+            )}
+
+            {/* Séance */}
+            {pptSelectedSeq && (pptSelectedSeq.seances || []).length > 0 && (
+              <div>
+                <label className={labelCls}>Séance <span className="text-gray-400 font-normal">(pré-remplit titre, type et durée)</span></label>
+                <select value={pptForm.seanceId} onChange={e => setPptField('seanceId', e.target.value)} className={inputCls}>
+                  <option value="">-- Toutes les séances de la séquence --</option>
+                  {(pptSelectedSeq.seances || []).map((s, i) => {
+                    const cal = pptCalSeances.find(cs => cs.seanceRubanId === s.id)
+                    const done = cal?.statut === 'faite'
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {done ? '✓ ' : ''}{i + 1}. {s.titre} ({s.type || 'Cours'}, {s.duree || 1}h){done ? ' — faite' : ''}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
             )}
